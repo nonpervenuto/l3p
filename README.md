@@ -1,7 +1,11 @@
-#453453
+# L3P
 
-(https://kristoff.it/blog/zig-new-async-io/) [gfhfghfg]
-(https://www.openmymind.net/Zigs-New-Writer/) [New Writer interface]
+# Requirements
+  * zig 0.15
+  * fasm
+  * gcc
 
-fasm test.asm
-gcc -no-pie test.o -lc
+# Build and Compile l3p files
+zig build run -- ./example/example.l3p 
+./output
+
