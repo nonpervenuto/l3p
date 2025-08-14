@@ -10,4 +10,6 @@ begin
     putchar(b)
     putchar(79)
     putchar(10)
+    printf('World Amico\n')
+    printf('Bazinga\n')
 end

@@ -4,16 +4,20 @@ const Lexer = @import("Lexer.zig");
 const Token = Lexer.Token;
 const TokenKind = Lexer.TokenKind;
 
-const ArgType = enum { argOffset, argLiteral };
-const Arg = union(ArgType) { argOffset: usize, argLiteral: i32 };
+const ArgType = enum { variable, integerLiteral, dataLiteral };
+const Arg = union(ArgType) { variable: usize, integerLiteral: i32, dataLiteral: usize };
 
 const DataType = enum { numeric };
-const DeclarationType = enum { var_dec };
+const DeclarationType = enum { var_dec, global_dec };
 const Declaration = union(DeclarationType) {
     var_dec: struct {
         name: []const u8,
         offset: usize,
         type: DataType,
+    },
+    global_dec: struct {
+        data: []const u8,
+        address: usize,
     },
 };
 const VariableList = std.ArrayList(Declaration);
@@ -41,19 +45,32 @@ fn findVariable(self: *@This(), name: []const u8) ?Declaration {
                     return variable;
                 }
             },
+            .global_dec => {},
         }
     }
     return null;
 }
 
-fn calcOffset(self: *@This(), dataType: DataType) usize {
+fn calcVarOffset(self: *@This(), dataType: DataType) usize {
     var sum: usize = 0;
     for (self.variables.items) |variable| {
         sum += switch (variable) {
             .var_dec => |value| value.offset,
+            .global_dec => 0,
         };
     }
     return sum + getVariableSize(dataType);
+}
+
+fn calcGlobalOffset(self: *@This()) usize {
+    var sum: usize = 0;
+    for (self.variables.items) |variable| {
+        sum += switch (variable) {
+            .var_dec => 0,
+            .global_dec => 1,
+        };
+    }
+    return sum;
 }
 
 fn getVariableSize(value: DataType) usize {
@@ -97,7 +114,7 @@ pub fn compile(self: *@This(), path: []const u8, buffer: []const u8) !void {
                 return error.UnexpectedToken;
             }
 
-            const offset = self.calcOffset(DataType.numeric);
+            const offset = self.calcVarOffset(DataType.numeric);
             const variable = Declaration{ .var_dec = .{
                 .name = var_name,
                 .offset = offset,
@@ -152,11 +169,20 @@ pub fn parseBody(self: *@This(), lexer: *Lexer) !void {
                             printError(current, "Variable '{s}' not defined \n", .{firstArgument.token});
                             return error.UnexpectedToken;
                         };
-                        try args.append(.{ .argOffset = declaration.var_dec.offset });
+                        try args.append(.{ .variable = declaration.var_dec.offset });
                     },
                     .IntegerLiteral => {
                         const value = try firstArgument.asInteger();
-                        try args.append(.{ .argLiteral = value });
+                        try args.append(.{ .integerLiteral = value });
+                    },
+                    .StringLiteral => {
+                        const dataOffset = self.calcGlobalOffset();
+                        const variable = Declaration{ .global_dec = .{
+                            .data = try firstArgument.asString(self.allocator),
+                            .address = dataOffset,
+                        } };
+                        self.variables.append(variable) catch unreachable;
+                        try args.append(.{ .dataLiteral = dataOffset });
                     },
                     else => {
                         printError(current, "Unexpected token '{s}' in function call {s} \n", .{ firstArgument.token, id });
@@ -194,6 +220,7 @@ pub fn build(self: *@This()) !void {
         try writer.print("  push rbp\n", .{});
         try writer.print("  mov rbp, rsp \n", .{});
         try writer.print("  extrn putchar\n", .{});
+        try writer.print("  extrn printf\n", .{});
 
         // allocate stack
         for (self.variables.items) |variable| {
@@ -202,6 +229,7 @@ pub fn build(self: *@This()) !void {
                     const size: usize = getVariableSize(value.type);
                     try writer.print("  sub rsp, {d}    \n", .{size});
                 },
+                .global_dec => {},
             }
         }
 
@@ -215,8 +243,9 @@ pub fn build(self: *@This()) !void {
                     const fnName = call.name;
                     const arg = call.args[0];
                     switch (arg) {
-                        .argOffset => |offset| try writer.print("  mov rdi, [rbp - {d}] \n", .{offset}),
-                        .argLiteral => |value| try writer.print("  mov rdi, {d} \n", .{value}),
+                        .variable => |offset| try writer.print("  mov rdi, [rbp - {d}] \n", .{offset}),
+                        .integerLiteral => |value| try writer.print("  mov rdi, {d} \n", .{value}),
+                        .dataLiteral => |value| try writer.print("  mov rdi, data{d}+0 \n", .{value}),
                     }
                     try writer.print("  call {s}\n", .{fnName});
                 },
@@ -230,6 +259,7 @@ pub fn build(self: *@This()) !void {
                     const size: usize = getVariableSize(value.type);
                     try writer.print("  add rsp, {d}    \n", .{size});
                 },
+                .global_dec => {},
             }
         }
 
@@ -240,6 +270,27 @@ pub fn build(self: *@This()) !void {
         try writer.print("  mov rax, 60  \n", .{});
         try writer.print("  mov rdi, 0   \n", .{});
         try writer.print("  int 0x80     \n", .{});
+
+        // data section
+        try writer.print("section \".data\"\n", .{});
+        for (self.variables.items) |variable| {
+            switch (variable) {
+                .var_dec => {},
+                .global_dec => |global| {
+                    try writer.print("   data{d}: db ", .{global.address});
+                    for (global.data, 0..) |char, i| {
+                        try writer.print("0x{X}", .{char});
+                        if (i < global.data.len - 1) {
+                            try writer.print(", ", .{});
+                        } else {
+                            try writer.print(", ", .{});
+                        }
+                    }
+                    try writer.print("0x00", .{});
+                    try writer.print("\n", .{});
+                },
+            }
+        }
     }
     try buf.flush();
     file.close();

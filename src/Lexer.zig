@@ -45,6 +45,18 @@ pub const Token = struct {
         }
     }
 
+    pub fn asString(self: Token, allocator: std.mem.Allocator) ![]const u8 {
+        if (self.token[0] == '\'' and self.token[self.token.len - 1] == '\'') {
+            // Escape string
+            const no_sigle_quote = self.token[1 .. self.token.len - 1];
+            const double_quoted = try std.fmt.allocPrint(allocator, "\"{s}\"", .{no_sigle_quote});
+            defer allocator.free(double_quoted);
+            return try std.zig.string_literal.parseAlloc(allocator, double_quoted);
+        } else {
+            return try allocator.dupe(u8, self.token);
+        }
+    }
+
     pub fn asInteger(self: Token) !i32 {
         return try std.fmt.parseInt(i32, self.token, 0);
     }
@@ -204,7 +216,6 @@ pub fn next(self: *@This()) ?Token {
         }
 
         // std.debug.print("token: ({s})\n", .{@tagName(kind)});
-
         const token: Token = .{
             .file_name = self.file_name,
             .token = self.buffer[self.token_start..self.token_end],
