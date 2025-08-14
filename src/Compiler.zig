@@ -149,7 +149,7 @@ pub fn parseBody(self: *@This(), lexer: *Lexer) !void {
                 switch (firstArgument.kind) {
                     .Id => {
                         const declaration = self.findVariable(firstArgument.token) orelse {
-                            printError(current, "Variable '{s}' not found\n", .{id});
+                            printError(current, "Variable '{s}' not defined \n", .{firstArgument.token});
                             return error.UnexpectedToken;
                         };
                         try args.append(.{ .argOffset = declaration.var_dec.offset });
@@ -158,7 +158,10 @@ pub fn parseBody(self: *@This(), lexer: *Lexer) !void {
                         const value = try firstArgument.asInteger();
                         try args.append(.{ .argLiteral = value });
                     },
-                    else => {},
+                    else => {
+                        printError(current, "Unexpected token '{s}' in function call {s} \n", .{ firstArgument.token, id });
+                        return error.UnexpectedToken;
+                    },
                 }
                 _ = try getAndExpect(lexer, TokenKind.CloseParent);
                 _ = try getAndExpect(lexer, TokenKind.EndOfLine);
@@ -229,6 +232,8 @@ pub fn build(self: *@This()) !void {
                 },
             }
         }
+
+        // restore stack
         try writer.print("  pop rbp\n", .{});
 
         // exit
