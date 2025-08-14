@@ -7,5 +7,4 @@
 
 # Build and Compile l3p files
 zig build run -- ./example/example.l3p 
-./output
 
