@@ -1,6 +1,13 @@
-Program sommatoria 
+Program Hello 
 var a: numeric
+var b: numeric
 begin
-    a := 70
-    putchar a
+    putchar(72)
+    a := 69
+    b := 76
+    putchar(a)
+    putchar(b)
+    putchar(b)
+    putchar(79)
+    putchar(10)
 end

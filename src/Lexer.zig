@@ -7,7 +7,7 @@ pub const keywords = [_][]const u8{ "PROGRAM", "VAR", "NUMERIC", "BEGIN", "END" 
 pub const TokenKind = enum {
     Id,
     Keyword,
-    Operation,
+    Opration,
     IntegerLiteral,
     StringLiteral,
     OpenParent,
@@ -30,6 +30,7 @@ pub const TokenKind = enum {
 };
 
 pub const Token = struct {
+    file_name: []const u8,
     token: []const u8,
     kind: TokenKind,
     lineNumber: usize,
@@ -80,8 +81,8 @@ pub fn peek(self: *@This()) ?Token {
 
 pub fn next(self: *@This()) ?Token {
     const eof = self.buffer.len;
+    var kind = TokenKind.Unknown;
     while (self.token_start < eof) {
-        var kind = TokenKind.Unknown;
         const cursor = self.buffer[self.token_start];
         switch (cursor) {
             ' ' => {
@@ -95,7 +96,10 @@ pub fn next(self: *@This()) ?Token {
                     self.lineNumber += 1;
                     self.token_end += 1;
                 }
-                kind = TokenKind.EndOfLine;
+
+                if (kind != TokenKind.Comment) {
+                    kind = TokenKind.EndOfLine;
+                }
             },
             '{' => {
                 self.token_end = self.token_start + 1;
@@ -167,7 +171,14 @@ pub fn next(self: *@This()) ?Token {
                 self.token_end = self.token_start + 1;
                 kind = TokenKind.Comma;
             },
-            // keywords and variable names
+            '(' => {
+                self.token_end = self.token_start + 1;
+                kind = TokenKind.OpenParent;
+            },
+            ')' => {
+                self.token_end = self.token_start + 1;
+                kind = TokenKind.CloseParent;
+            }, // keywords and variable names
             'a'...'z', 'A'...'Z' => {
                 self.token_end = self.token_start + 1;
                 while (self.token_end < eof and std.ascii.isAlphanumeric(self.buffer[self.token_end])) {
@@ -187,7 +198,15 @@ pub fn next(self: *@This()) ?Token {
             },
         }
 
+        if (kind == TokenKind.Comment) {
+            self.token_start = self.token_end;
+            continue;
+        }
+
+        // std.debug.print("token: ({s})\n", .{@tagName(kind)});
+
         const token: Token = .{
+            .file_name = self.file_name,
             .token = self.buffer[self.token_start..self.token_end],
             .kind = kind,
             .lineNumber = self.lineNumber,

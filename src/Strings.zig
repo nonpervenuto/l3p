@@ -1,10 +1,12 @@
 const std = @import("std");
 
-pub fn eqlIgnoreCase(needle: []const u8, keyword: []const u8) bool {
-    var buffer: [1024]u8 = undefined;
-    if (buffer.len >= needle.len) {
-        const upNeedle = std.ascii.upperString(&buffer, needle);
-        if (std.mem.eql(u8, upNeedle, keyword)) {
+pub fn eqlIgnoreCase(needle: []const u8, haystack: []const u8) bool {
+    var buffer1: [1024]u8 = undefined;
+    var buffer2: [1024]u8 = undefined;
+    if (buffer1.len >= needle.len and buffer2.len >= haystack.len) {
+        const upNeedle = std.ascii.upperString(&buffer1, needle);
+        const upHaystack = std.ascii.upperString(&buffer2, haystack);
+        if (std.mem.eql(u8, upNeedle, upHaystack)) {
             return true;
         }
     }
