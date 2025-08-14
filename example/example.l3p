@@ -1,0 +1,6 @@
+Program sommatoria 
+var a: numeric
+begin
+    a := 70
+    putchar a
+end

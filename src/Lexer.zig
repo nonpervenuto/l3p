@@ -1,0 +1,215 @@
+const std = @import("std");
+const upperString = std.ascii.upperString;
+const eql = std.mem.eql;
+
+pub const keywords = [_][]const u8{ "PROGRAM", "VAR", "NUMERIC", "BEGIN", "END" };
+
+pub const TokenKind = enum {
+    Id,
+    Keyword,
+    Operation,
+    IntegerLiteral,
+    StringLiteral,
+    OpenParent,
+    CloseParent,
+    Comment,
+    Comma,
+    Equal,
+    Plus,
+    PlusEqual,
+    Minus,
+    MinusEqual,
+    Multiply,
+    MultiplyEqual,
+    Divide,
+    DivideEqual,
+    Colon,
+    ColonEqual,
+    EndOfLine,
+    Unknown,
+};
+
+pub const Token = struct {
+    token: []const u8,
+    kind: TokenKind,
+    lineNumber: usize,
+    token_start: usize,
+    token_end: usize,
+
+    pub fn format(self: Token, w: *std.Io.Writer) !void {
+        if (self.kind == TokenKind.EndOfLine) {
+            try w.print("{d}:({d}-{d}) {}", .{ self.lineNumber, self.token_start, self.token_end, self.kind });
+        } else {
+            try w.print("{d}:({d}-{d}) {} \"{s}\"", .{ self.lineNumber, self.token_start, self.token_end, self.kind, self.token });
+        }
+    }
+
+    pub fn asInteger(self: Token) !i32 {
+        return try std.fmt.parseInt(i32, self.token, 0);
+    }
+
+    pub fn asFloat(self: Token) !f32 {
+        return try std.fmt.parseFloat(type, self.token);
+    }
+};
+
+file_name: []const u8,
+buffer: []const u8,
+lineNumber: usize,
+token_start: usize,
+token_end: usize,
+
+pub fn init(file_name: []const u8, buffer: []const u8) @This() {
+    return @This(){
+        .file_name = file_name,
+        .buffer = buffer,
+        .lineNumber = 0,
+        .token_start = 0,
+        .token_end = 0,
+    };
+}
+
+pub fn peek(self: *@This()) ?Token {
+    const savepoint = .{ self.lineNumber, self.token_start, self.token_end };
+    const next_token = self.next();
+    self.lineNumber = savepoint[0];
+    self.token_start = savepoint[1];
+    self.token_end = savepoint[2];
+    return next_token;
+}
+
+pub fn next(self: *@This()) ?Token {
+    const eof = self.buffer.len;
+    while (self.token_start < eof) {
+        var kind = TokenKind.Unknown;
+        const cursor = self.buffer[self.token_start];
+        switch (cursor) {
+            ' ' => {
+                self.token_start += 1;
+                self.token_end = self.token_start;
+                continue;
+            },
+            '\n' => {
+                self.token_end = self.token_start;
+                while (self.token_end < eof and (self.buffer[self.token_end]) == '\n') {
+                    self.lineNumber += 1;
+                    self.token_end += 1;
+                }
+                kind = TokenKind.EndOfLine;
+            },
+            '{' => {
+                self.token_end = self.token_start + 1;
+                while (self.token_end < eof and self.buffer[self.token_end] != '}') {
+                    self.token_end += 1;
+                }
+                if (self.token_end < eof and self.buffer[self.token_end] == '}') {
+                    self.token_end += 1;
+                }
+                kind = TokenKind.Comment;
+            },
+            '\'' => {
+                self.token_end = self.token_start + 1;
+                while (self.token_end < eof and self.buffer[self.token_end] != '\'') {
+                    self.token_end += 1;
+                }
+
+                if (self.token_end < eof and self.buffer[self.token_end] == '\'') {
+                    self.token_end += 1;
+                }
+
+                kind = TokenKind.StringLiteral;
+            },
+            '+' => {
+                self.token_end = self.token_start + 1;
+                kind = TokenKind.Plus;
+                if (self.token_end < eof and self.buffer[self.token_end] == '=') {
+                    kind = TokenKind.PlusEqual;
+                    self.token_end += 1;
+                }
+            },
+            '-' => {
+                self.token_end = self.token_start + 1;
+                kind = TokenKind.Minus;
+                if (self.token_end < eof and self.buffer[self.token_end] == '=') {
+                    kind = TokenKind.MinusEqual;
+                    self.token_end += 1;
+                }
+            },
+            '*' => {
+                self.token_end = self.token_start + 1;
+                kind = TokenKind.Multiply;
+                if (self.token_end < eof and self.buffer[self.token_end] == '=') {
+                    kind = TokenKind.MultiplyEqual;
+                    self.token_end += 1;
+                }
+            },
+            '/' => {
+                self.token_end = self.token_start + 1;
+                kind = TokenKind.Divide;
+                if (self.token_end < eof and self.buffer[self.token_end] == '=') {
+                    kind = TokenKind.DivideEqual;
+                    self.token_end += 1;
+                }
+            },
+            ':' => {
+                self.token_end = self.token_start + 1;
+                kind = TokenKind.Colon;
+                if (self.token_end < eof and self.buffer[self.token_end] == '=') {
+                    kind = TokenKind.ColonEqual;
+                    self.token_end += 1;
+                }
+            },
+            '=' => {
+                self.token_end = self.token_start + 1;
+                kind = TokenKind.Equal;
+            },
+            ',' => {
+                self.token_end = self.token_start + 1;
+                kind = TokenKind.Comma;
+            },
+            // keywords and variable names
+            'a'...'z', 'A'...'Z' => {
+                self.token_end = self.token_start + 1;
+                while (self.token_end < eof and std.ascii.isAlphanumeric(self.buffer[self.token_end])) {
+                    self.token_end += 1;
+                }
+                kind = getTokenKind(self.buffer[self.token_start..self.token_end]);
+            },
+            '0'...'9' => {
+                self.token_end = self.token_start + 1;
+                while (self.token_end < eof and std.ascii.isDigit(self.buffer[self.token_end])) {
+                    self.token_end += 1;
+                }
+                kind = TokenKind.IntegerLiteral;
+            },
+            else => {
+                self.token_start += 1;
+            },
+        }
+
+        const token: Token = .{
+            .token = self.buffer[self.token_start..self.token_end],
+            .kind = kind,
+            .lineNumber = self.lineNumber,
+            .token_start = self.token_start,
+            .token_end = self.token_end,
+        };
+
+        self.token_start = self.token_end;
+        return token;
+    }
+    return null;
+}
+
+pub fn getTokenKind(needle: []const u8) TokenKind {
+    for (keywords) |keyword| {
+        var buffer: [1024]u8 = undefined;
+        if (buffer.len >= needle.len) {
+            const upNeedle = upperString(&buffer, needle);
+            if (eql(u8, upNeedle, keyword)) {
+                return TokenKind.Keyword;
+            }
+        }
+    }
+    return TokenKind.Id;
+}
