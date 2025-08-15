@@ -1,15 +1,21 @@
 Program Hello 
-var a: numeric
-var b: numeric
+var h: numeric
+var e: numeric
+var l1: numeric
+var l2: numeric
+var l3: numeric
 begin
-    putchar(72)
-    a := 69
-    b := 76
-    putchar(a)
-    putchar(b)
-    putchar(b)
-    putchar(79)
+    h := 72
+    e := 69 
+    l1 := 76 
+    l2 := l1
+    l3 := l2
+    putchar(h)
+    putchar(e)
+    putchar(l1)
+    putchar(l2)
+    putchar(l3)
     putchar(10)
-    printf('World Amico\n')
-    printf('Bazinga\n')
+    printf('Bazinga')
+    printf(' ASEO\n')
 end

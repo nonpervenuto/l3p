@@ -7,7 +7,6 @@ pub const keywords = [_][]const u8{ "PROGRAM", "VAR", "NUMERIC", "BEGIN", "END" 
 pub const TokenKind = enum {
     Id,
     Keyword,
-    Opration,
     IntegerLiteral,
     StringLiteral,
     OpenParent,
@@ -25,6 +24,7 @@ pub const TokenKind = enum {
     DivideEqual,
     Colon,
     ColonEqual,
+    SemiColon,
     EndOfLine,
     Unknown,
 };
@@ -190,7 +190,11 @@ pub fn next(self: *@This()) ?Token {
             ')' => {
                 self.token_end = self.token_start + 1;
                 kind = TokenKind.CloseParent;
-            }, // keywords and variable names
+            },
+            ';' => {
+                self.token_end = self.token_start + 1;
+                kind = TokenKind.SemiColon;
+            },
             'a'...'z', 'A'...'Z' => {
                 self.token_end = self.token_start + 1;
                 while (self.token_end < eof and std.ascii.isAlphanumeric(self.buffer[self.token_end])) {
@@ -206,7 +210,8 @@ pub fn next(self: *@This()) ?Token {
                 kind = TokenKind.IntegerLiteral;
             },
             else => {
-                self.token_start += 1;
+                self.token_end = self.token_start + 1;
+                kind = TokenKind.Unknown;
             },
         }
 
@@ -215,10 +220,12 @@ pub fn next(self: *@This()) ?Token {
             continue;
         }
 
+        const token = self.buffer[self.token_start..self.token_end];
         // std.debug.print("token: ({s})\n", .{@tagName(kind)});
-        const token: Token = .{
+        // std.debug.print("token: ({s})\n", .{name});
+        const plex: Token = .{
             .file_name = self.file_name,
-            .token = self.buffer[self.token_start..self.token_end],
+            .token = token,
             .kind = kind,
             .lineNumber = self.lineNumber,
             .token_start = self.token_start,
@@ -226,7 +233,7 @@ pub fn next(self: *@This()) ?Token {
         };
 
         self.token_start = self.token_end;
-        return token;
+        return plex;
     }
     return null;
 }

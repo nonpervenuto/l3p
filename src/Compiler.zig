@@ -23,14 +23,22 @@ const Declaration = union(DeclarationType) {
 const VariableList = std.ArrayList(Declaration);
 
 // expressions
-const InstructionType = enum { assign, call };
-const Instruction = union(InstructionType) { assign: struct {
-    offset: usize,
-    value: i32,
-}, call: struct {
-    name: []const u8,
-    args: []const Arg,
-} };
+const InstructionType = enum { assign, infix_plus, call };
+const Instruction = union(InstructionType) {
+    assign: struct {
+        offset: usize,
+        arg: Arg,
+    },
+    infix_plus: struct {
+        offset: usize,
+        lhs: Arg,
+        rhs: Arg,
+    },
+    call: struct {
+        name: []const u8,
+        args: []const Arg,
+    },
+};
 const OperationList = std.ArrayList(Instruction);
 
 allocator: std.mem.Allocator,
@@ -52,14 +60,14 @@ fn findVariable(self: *@This(), name: []const u8) ?Declaration {
 }
 
 fn calcVarOffset(self: *@This(), dataType: DataType) usize {
-    var sum: usize = 0;
+    var sum: usize = getVariableSize(dataType);
     for (self.variables.items) |variable| {
         sum += switch (variable) {
-            .var_dec => |value| value.offset,
+            .var_dec => |value| getVariableSize(value.type),
             .global_dec => 0,
         };
     }
-    return sum + getVariableSize(dataType);
+    return sum;
 }
 
 fn calcGlobalOffset(self: *@This()) usize {
@@ -75,7 +83,7 @@ fn calcGlobalOffset(self: *@This()) usize {
 
 fn getVariableSize(value: DataType) usize {
     return switch (value) {
-        .numeric => 32,
+        .numeric => 8,
     };
 }
 
@@ -134,6 +142,38 @@ pub fn compile(self: *@This(), path: []const u8, buffer: []const u8) !void {
     // _ = try getAndExpect(&lexer, TokenKind.EndOfLine);
 }
 
+pub fn parsePrimary(self: *@This(), lexer: *Lexer) !?Arg {
+    const token = lexer.next().?;
+    const arg: Arg = switch (token.kind) {
+        .Id => arg: {
+            const declaration = self.findVariable(token.token) orelse {
+                printError(token, "Variable '{s}' not defined \n", .{token.token});
+                return error.UnexpectedToken;
+            };
+            break :arg Arg{ .variable = declaration.var_dec.offset };
+        },
+        .IntegerLiteral => arg: {
+            const value = try token.asInteger();
+            break :arg Arg{ .integerLiteral = value };
+        },
+        .StringLiteral => arg: {
+            const dataOffset = self.calcGlobalOffset();
+            const variable = Declaration{ .global_dec = .{
+                .data = try token.asString(self.allocator),
+                .address = dataOffset,
+            } };
+            self.variables.append(variable) catch unreachable;
+            break :arg Arg{ .dataLiteral = dataOffset };
+        },
+        else => {
+            printError(token, "Unexpected token '{s}'\n", .{token.token});
+            return error.UnexpectedToken;
+        },
+    };
+
+    return arg;
+}
+
 pub fn parseBody(self: *@This(), lexer: *Lexer) !void {
     while (lexer.next()) |current| {
         if (current.kind == TokenKind.Id) {
@@ -143,51 +183,30 @@ pub fn parseBody(self: *@This(), lexer: *Lexer) !void {
             // assign
             if (peek_token.kind == TokenKind.ColonEqual) {
                 _ = try getAndExpect(lexer, TokenKind.ColonEqual);
-                const integerLiteral = try getAndExpect(lexer, TokenKind.IntegerLiteral);
-                const value = try integerLiteral.asInteger();
-                _ = try getAndExpect(lexer, TokenKind.EndOfLine);
 
                 const declaration = self.findVariable(id) orelse {
                     printError(current, "Variable '{s}' not found\n", .{id});
                     return error.UnexpectedToken;
                 };
 
-                try self.operations.append(.{ .assign = .{
-                    .offset = declaration.var_dec.offset,
-                    .value = value,
-                } });
+                const opt_arg: ?Arg = try self.parsePrimary(lexer);
+                if (opt_arg) |arg| {
+                    _ = try getAndExpect(lexer, TokenKind.EndOfLine);
+                    try self.operations.append(.{
+                        .assign = .{
+                            .offset = declaration.var_dec.offset,
+                            .arg = arg,
+                        },
+                    });
+                }
             } else if (peek_token.kind == TokenKind.OpenParent) {
                 _ = try getAndExpect(lexer, TokenKind.OpenParent);
 
-                const firstArgument = lexer.next().?;
-
+                // TODO: iterate arguments list
                 var args = std.ArrayList(Arg).init(self.allocator);
-
-                switch (firstArgument.kind) {
-                    .Id => {
-                        const declaration = self.findVariable(firstArgument.token) orelse {
-                            printError(current, "Variable '{s}' not defined \n", .{firstArgument.token});
-                            return error.UnexpectedToken;
-                        };
-                        try args.append(.{ .variable = declaration.var_dec.offset });
-                    },
-                    .IntegerLiteral => {
-                        const value = try firstArgument.asInteger();
-                        try args.append(.{ .integerLiteral = value });
-                    },
-                    .StringLiteral => {
-                        const dataOffset = self.calcGlobalOffset();
-                        const variable = Declaration{ .global_dec = .{
-                            .data = try firstArgument.asString(self.allocator),
-                            .address = dataOffset,
-                        } };
-                        self.variables.append(variable) catch unreachable;
-                        try args.append(.{ .dataLiteral = dataOffset });
-                    },
-                    else => {
-                        printError(current, "Unexpected token '{s}' in function call {s} \n", .{ firstArgument.token, id });
-                        return error.UnexpectedToken;
-                    },
+                const opt_arg: ?Arg = try self.parsePrimary(lexer);
+                if (opt_arg) |arg| {
+                    try args.append(arg);
                 }
                 _ = try getAndExpect(lexer, TokenKind.CloseParent);
                 _ = try getAndExpect(lexer, TokenKind.EndOfLine);
@@ -213,12 +232,13 @@ pub fn build(self: *@This()) !void {
 
     {
         try writer.print("format ELF64\n", .{});
-        try writer.print("section \".text\" executable\n", .{});
+        try writer.print("section \".text\" executable align 8 \n", .{});
         try writer.print("public main\n", .{});
         try writer.print("main:\n", .{});
 
         try writer.print("  push rbp\n", .{});
         try writer.print("  mov rbp, rsp \n", .{});
+        // try writer.print("  ;external funciton definition\n", .{});
         try writer.print("  extrn putchar\n", .{});
         try writer.print("  extrn printf\n", .{});
 
@@ -227,19 +247,54 @@ pub fn build(self: *@This()) !void {
             switch (variable) {
                 .var_dec => |value| {
                     const size: usize = getVariableSize(value.type);
+                    // try writer.print("  ;stack allocation\n", .{});
                     try writer.print("  sub rsp, {d}    \n", .{size});
                 },
                 .global_dec => {},
             }
         }
 
+        // TODO
+        // RAX, RBX, RCX, RDX, RSI, RDI, RBP, RSP, sono 64bit
+        // EAX, EBX, ECX, EDX, ESI, EDI, EBP, ESP, sono 32bit
+
         // assign value
         for (self.operations.items) |operation| {
             switch (operation) {
                 .assign => |assign| {
-                    try writer.print("  mov [rbp - {d}], DWORD {d}    \n", .{ assign.offset, assign.value });
+                    const target = assign.offset;
+                    switch (assign.arg) {
+                        .variable => |arg_offset| {
+                            // try writer.print("  ;assign stack var to another stack var\n", .{});
+                            try writer.print("  mov rax, [rbp - {d}] \n", .{arg_offset});
+                            try writer.print("  mov [rbp - {d}], rax \n", .{target});
+                        },
+                        .integerLiteral => |value| {
+                            // try writer.print("  ;assign literal to stack var\n", .{});
+                            try writer.print("  mov QWORD [rbp - {d}], {d} \n", .{ target, value });
+                        },
+                        .dataLiteral => |_| {
+                            // TODO gestire il caso
+                            @panic("Impossibile assgnare un data literal, ad esempio una stringa, ad una variabile");
+                        },
+                    }
+                },
+                .infix_plus => |infix_plus| {
+                    const target_offset = infix_plus.offset;
+                    switch (infix_plus.lhs) {
+                        .variable => |lhs_offset| try writer.print("  mov rax, [rbp - {d}] \n", .{lhs_offset}),
+                        .integerLiteral => |lhs_value| try writer.print("  mov rax, {d} \n", .{lhs_value}),
+                        else => {},
+                    }
+                    switch (infix_plus.rhs) {
+                        .variable => |rhs_offset| try writer.print("  add rax, [rbp - {d}] \n", .{rhs_offset}),
+                        .integerLiteral => |rhs_value| try writer.print("  add rax, {d} \n", .{rhs_value}),
+                        else => {},
+                    }
+                    try writer.print("  mov [rbp - {d}] rax\n", .{target_offset});
                 },
                 .call => |call| {
+                    // try writer.print("  ;function call\n", .{});
                     const fnName = call.name;
                     const arg = call.args[0];
                     switch (arg) {
@@ -247,6 +302,10 @@ pub fn build(self: *@This()) !void {
                         .integerLiteral => |value| try writer.print("  mov rdi, {d} \n", .{value}),
                         .dataLiteral => |value| try writer.print("  mov rdi, data{d}+0 \n", .{value}),
                     }
+
+                    // TODO azzera il registo AL, serve per chiamara printf, non so se serve per tutte le funzioni extrn
+                    try writer.print("  xor eax, eax\n", .{});
+
                     try writer.print("  call {s}\n", .{fnName});
                 },
             }
@@ -257,19 +316,18 @@ pub fn build(self: *@This()) !void {
             switch (variable) {
                 .var_dec => |value| {
                     const size: usize = getVariableSize(value.type);
+                    // try writer.print("  ;stack deallocation\n", .{});
                     try writer.print("  add rsp, {d}    \n", .{size});
                 },
                 .global_dec => {},
             }
         }
-
         // restore stack
         try writer.print("  pop rbp\n", .{});
 
-        // exit
-        try writer.print("  mov rax, 60  \n", .{});
-        try writer.print("  mov rdi, 0   \n", .{});
-        try writer.print("  int 0x80     \n", .{});
+        // try writer.print("  ;return status code\n", .{});
+        try writer.print("  mov rax, 0\n", .{});
+        try writer.print("  ret\n", .{});
 
         // data section
         try writer.print("section \".data\"\n", .{});
