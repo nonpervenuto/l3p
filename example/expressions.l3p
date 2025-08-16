@@ -1,17 +1,6 @@
 Program Main 
-var uno : numeric
 var a : numeric
-var z : numeric
 begin
-    uno := 1
-    a := 65 + 2000 - 2000
-    z := 90 
-    putchar( a ) 
-    putchar( a + 1 ) 
-    putchar( a + 1 + uno) 
-    putchar( a + 1 + uno + 1 ) 
-    putchar( z - 1 - uno - 1 ) 
-    putchar( z - 1 - uno) 
-    putchar( z - 1 )
-    putchar( z ) 
+    a:= 6 * 7 + 1 - 5 * 20 / 2 + 40 - 20 + 8 / 4 + 5 - 100 / 10 * 2  
+    printf('Var a: %d\n', a)
 end

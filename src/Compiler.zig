@@ -23,7 +23,7 @@ const Declaration = union(DeclarationType) {
 const VariableList = std.ArrayList(Declaration);
 
 // expressions
-const OpType = enum { assign, infix_plus, infix_minus, call };
+const OpType = enum { assign, infix_plus, infix_minus, infix_multiply, infix_divide, call };
 const Op = union(OpType) {
     assign: struct {
         offset: usize,
@@ -35,6 +35,16 @@ const Op = union(OpType) {
         rhs: Arg,
     },
     infix_minus: struct {
+        offset: usize,
+        lhs: Arg,
+        rhs: Arg,
+    },
+    infix_multiply: struct {
+        offset: usize,
+        lhs: Arg,
+        rhs: Arg,
+    },
+    infix_divide: struct {
         offset: usize,
         lhs: Arg,
         rhs: Arg,
@@ -178,48 +188,72 @@ pub fn parsePrimary(self: *@This(), lexer: *Lexer) !Arg {
     return arg;
 }
 
-fn isOperator(token: ?Lexer.Token) bool {
-    if (token) |t| {
-        return switch (t.kind) {
-            .Plus => true,
-            .Minus => true,
-            else => false,
-        };
-    } else return false;
+fn isOperator(k: TokenKind) bool {
+    return switch (k) {
+        .Plus, .Minus, .Multiply, .Divide => true,
+        else => false,
+    };
+}
+
+fn getPrecedence(k: TokenKind) usize {
+    return switch (k) {
+        .Plus, .Minus => 1,
+        .Multiply, .Divide => 2,
+        else => 0,
+    };
 }
 
 pub fn compileExpression(self: *@This(), lexer: *Lexer) !Arg {
-    var lhs = try self.parsePrimary(lexer);
+    const lhs = try self.parsePrimary(lexer);
+    const res = try self.compileExpressionRecursive(lexer, lhs, 0);
+    // std.debug.print("{} \n", .{res});
+    return res;
+}
 
-    if (!isOperator(lexer.peek())) {
-        return lhs;
-    }
-    const address = self.calcVarOffset(DataType.numeric);
-    const temp_var = Declaration{
-        .var_dec = .{
-            .name = "tmp",
-            .offset = address,
-            .type = DataType.numeric,
-        },
-    };
-    try self.variables.append(temp_var);
-    while (lexer.peek()) |operand| {
-        switch (operand.kind) {
-            .Plus => {
-                _ = try getAndExpect(lexer, TokenKind.Plus);
-                const rhs = try self.parsePrimary(lexer);
-                try self.operations.append(.{ .infix_plus = .{ .offset = address, .lhs = lhs, .rhs = rhs } });
+pub fn compileExpressionRecursive(self: *@This(), lexer: *Lexer, arg: Arg, precedence: usize) !Arg {
+    var lookahead = lexer.peek().?;
+    var lhs = arg;
+    while (isOperator(lookahead.kind) and getPrecedence(lookahead.kind) >= precedence) {
+        _ = lexer.next().?;
+        const op: TokenKind = lookahead.kind;
+        var rhs = try self.parsePrimary(lexer);
+
+        lookahead = lexer.peek().?;
+        if (isOperator(lookahead.kind) and getPrecedence(lookahead.kind) > getPrecedence(op)) {
+            const add: usize = if (getPrecedence(lookahead.kind) > getPrecedence(op)) 1 else 0;
+            const new_precedence: usize = getPrecedence(op) + add;
+            rhs = try self.compileExpressionRecursive(lexer, rhs, new_precedence);
+            lookahead = lexer.peek().?;
+        }
+        // std.debug.print("{} {} {}\n", .{ lhs, op, rhs });
+        const address = self.calcVarOffset(DataType.numeric);
+        const temp_var = Declaration{
+            .var_dec = .{
+                .name = "tmp",
+                .offset = address,
+                .type = DataType.numeric,
             },
-            .Minus => {
-                _ = try getAndExpect(lexer, TokenKind.Minus);
-                const rhs = try self.parsePrimary(lexer);
-                try self.operations.append(.{ .infix_minus = .{ .offset = address, .lhs = lhs, .rhs = rhs } });
-            },
+        };
+
+        try self.variables.append(temp_var);
+        switch (op) {
+            .Plus => try self.operations.append(.{
+                .infix_plus = .{ .offset = address, .lhs = lhs, .rhs = rhs },
+            }),
+            .Minus => try self.operations.append(.{
+                .infix_minus = .{ .offset = address, .lhs = lhs, .rhs = rhs },
+            }),
+            .Multiply => try self.operations.append(.{
+                .infix_multiply = .{ .offset = address, .lhs = lhs, .rhs = rhs },
+            }),
+            .Divide => try self.operations.append(.{
+                .infix_divide = .{ .offset = address, .lhs = lhs, .rhs = rhs },
+            }),
             else => break,
         }
         lhs = Arg{ .variable = address };
     }
-    return Arg{ .variable = address };
+    return lhs;
 }
 
 pub fn parseBody(self: *@This(), lexer: *Lexer) !void {
@@ -238,6 +272,7 @@ pub fn parseBody(self: *@This(), lexer: *Lexer) !void {
                 };
 
                 const arg = try self.compileExpression(lexer);
+
                 _ = try getAndExpect(lexer, TokenKind.EndOfLine);
                 try self.operations.append(.{
                     .assign = .{
@@ -250,9 +285,15 @@ pub fn parseBody(self: *@This(), lexer: *Lexer) !void {
 
                 // TODO: iterate arguments list
                 var args = std.ArrayList(Arg).init(self.allocator);
-                const arg = try self.compileExpression(lexer);
-                try args.append(arg);
 
+                while (lexer.peek().?.kind != TokenKind.CloseParent) {
+                    const arg = try self.compileExpression(lexer);
+                    try args.append(arg);
+
+                    if (lexer.peek().?.kind == TokenKind.Comma) {
+                        _ = lexer.next();
+                    }
+                }
                 _ = try getAndExpect(lexer, TokenKind.CloseParent);
                 _ = try getAndExpect(lexer, TokenKind.EndOfLine);
 
@@ -311,8 +352,8 @@ pub fn build(self: *@This()) !void {
                     switch (assign.arg) {
                         .variable => |arg_offset| {
                             // try writer.print("  ;assign stack var to another stack var\n", .{});
-                            try writer.print("  mov rax, [rbp - {d}] \n", .{arg_offset});
-                            try writer.print("  mov [rbp - {d}], rax \n", .{target});
+                            try writer.print("  mov rax, QWORD [rbp - {d}] \n", .{arg_offset});
+                            try writer.print("  mov QWORD [rbp - {d}], rax \n", .{target});
                         },
                         .integerLiteral => |value| {
                             // try writer.print("  ;assign literal to stack var\n", .{});
@@ -341,31 +382,69 @@ pub fn build(self: *@This()) !void {
                 .infix_minus => |infix_plus| {
                     const target_offset = infix_plus.offset;
                     switch (infix_plus.lhs) {
+                        .variable => |lhs_offset| try writer.print("  mov rax, QWORD [rbp - {d}] \n", .{lhs_offset}),
+                        .integerLiteral => |lhs_value| try writer.print("  mov QWORD rax, {d} \n", .{lhs_value}),
+                        else => {},
+                    }
+                    switch (infix_plus.rhs) {
+                        .variable => |rhs_offset| try writer.print("  sub rax, QWORD [rbp - {d}] \n", .{rhs_offset}),
+                        .integerLiteral => |rhs_value| try writer.print("  sub QWORD rax, {d} \n", .{rhs_value}),
+                        else => {},
+                    }
+                    try writer.print("  mov QWORD [rbp - {d}], rax\n", .{target_offset});
+                },
+                .infix_multiply => |infix_plus| {
+                    const target_offset = infix_plus.offset;
+                    switch (infix_plus.lhs) {
                         .variable => |lhs_offset| try writer.print("  mov rax, [rbp - {d}] \n", .{lhs_offset}),
                         .integerLiteral => |lhs_value| try writer.print("  mov rax, {d} \n", .{lhs_value}),
                         else => {},
                     }
                     switch (infix_plus.rhs) {
-                        .variable => |rhs_offset| try writer.print("  sub rax, [rbp - {d}] \n", .{rhs_offset}),
-                        .integerLiteral => |rhs_value| try writer.print("  sub rax, {d} \n", .{rhs_value}),
+                        .variable => |rhs_offset| try writer.print("  imul rax, [rbp - {d}] \n", .{rhs_offset}),
+                        .integerLiteral => |rhs_value| try writer.print("  imul rax, {d} \n", .{rhs_value}),
                         else => {},
                     }
+                    try writer.print("  mov [rbp - {d}], rax\n", .{target_offset});
+                },
+                .infix_divide => |infix_plus| {
+                    const target_offset = infix_plus.offset;
+                    // Clear RDX
+                    try writer.print("  xor rdx, rdx\n", .{});
+                    switch (infix_plus.lhs) {
+                        .variable => |lhs_offset| try writer.print("  mov rax, [rbp - {d}] \n", .{lhs_offset}),
+                        .integerLiteral => |lhs_value| try writer.print("  mov rax, {d} \n", .{lhs_value}),
+                        else => {},
+                    }
+                    switch (infix_plus.rhs) {
+                        .variable => |rhs_offset| try writer.print("  mov rbx, [rbp - {d}]\n", .{rhs_offset}),
+                        .integerLiteral => |rhs_value| try writer.print("  mov rbx, {d} \n", .{rhs_value}),
+                        else => {},
+                    }
+                    try writer.print("  div rbx\n", .{});
+                    // ; RAX = RAX / RBX
+                    // , RDX = RAX % RBX
                     try writer.print("  mov [rbp - {d}], rax\n", .{target_offset});
                 },
                 .call => |call| {
                     // try writer.print("  ;function call\n", .{});
                     const fnName = call.name;
-                    const arg = call.args[0];
-                    switch (arg) {
-                        .variable => |offset| try writer.print("  mov rdi, [rbp - {d}] \n", .{offset}),
-                        .integerLiteral => |value| try writer.print("  mov rdi, {d} \n", .{value}),
-                        .dataLiteral => |value| try writer.print("  mov rdi, data{d}+0 \n", .{value}),
+                    const registers = [_][]const u8{ "RDI", "RSI", "RDX", "RCX", "R8", "R9" };
+                    if (call.args.len <= registers.len) {
+                        for (call.args, 0..) |arg, i| {
+                            const reg = registers[i];
+                            switch (arg) {
+                                .variable => |offset| try writer.print("  mov {s}, [rbp - {d}] \n", .{ reg, offset }),
+                                .integerLiteral => |value| try writer.print("  mov {s}, {d} \n", .{ reg, value }),
+                                .dataLiteral => |value| try writer.print("  mov {s}, data{d}+0 \n", .{ reg, value }),
+                            }
+                        }
+                        // TODO azzera il registo AL, serve per chiamara printf, non so se serve per tutte le funzioni extrn
+                        try writer.print("  xor eax, eax\n", .{});
+                        try writer.print("  call {s}\n", .{fnName});
+                    } else {
+                        @panic("Call a funzioni esterne supporta al massimo 6 argomenti");
                     }
-
-                    // TODO azzera il registo AL, serve per chiamara printf, non so se serve per tutte le funzioni extrn
-                    try writer.print("  xor eax, eax\n", .{});
-
-                    try writer.print("  call {s}\n", .{fnName});
                 },
             }
         }
