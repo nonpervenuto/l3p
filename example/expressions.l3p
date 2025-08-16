@@ -1,12 +1,17 @@
 Program Main 
+var uno : numeric
+var a : numeric
+var z : numeric
 begin
-    putchar( 65 )
-    putchar( 65 + 1 )
-    putchar( 65 + 1 + 1 )
-    putchar( 65 + 1 + 1 + 1 )
-    putchar( 68 - 1 - 1 - 1 )
-    putchar( 68 - 1 - 1)
-    putchar( 68 - 1 )
-    putchar( 68 )
-    putchar( 65 + 2000 + 20 - 10 - 10 - 2000)
+    uno := 1
+    a := 65 + 2000 - 2000
+    z := 90 
+    putchar( a ) 
+    putchar( a + 1 ) 
+    putchar( a + 1 + uno) 
+    putchar( a + 1 + uno + 1 ) 
+    putchar( z - 1 - uno - 1 ) 
+    putchar( z - 1 - uno) 
+    putchar( z - 1 )
+    putchar( z ) 
 end

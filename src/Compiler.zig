@@ -147,7 +147,7 @@ pub fn compile(self: *@This(), path: []const u8, buffer: []const u8) !void {
     // _ = try getAndExpect(&lexer, TokenKind.EndOfLine);
 }
 
-pub fn parsePrimary(self: *@This(), lexer: *Lexer) !?Arg {
+pub fn parsePrimary(self: *@This(), lexer: *Lexer) !Arg {
     const token = lexer.next().?;
     const arg: Arg = switch (token.kind) {
         .Id => arg: {
@@ -167,7 +167,7 @@ pub fn parsePrimary(self: *@This(), lexer: *Lexer) !?Arg {
                 .data = try token.asString(self.allocator),
                 .address = dataOffset,
             } };
-            self.variables.append(variable) catch unreachable;
+            try self.variables.append(variable);
             break :arg Arg{ .dataLiteral = dataOffset };
         },
         else => {
@@ -175,7 +175,6 @@ pub fn parsePrimary(self: *@This(), lexer: *Lexer) !?Arg {
             return error.UnexpectedToken;
         },
     };
-
     return arg;
 }
 
@@ -189,46 +188,38 @@ fn isOperator(token: ?Lexer.Token) bool {
     } else return false;
 }
 
-pub fn compileExpression(self: *@This(), lexer: *Lexer) !?Arg {
-    const lhs_opt: ?Arg = try self.parsePrimary(lexer);
-    var lhs = lhs_opt.?;
+pub fn compileExpression(self: *@This(), lexer: *Lexer) !Arg {
+    var lhs = try self.parsePrimary(lexer);
 
-    if (isOperator(lexer.peek())) {
-        const address = self.calcVarOffset(DataType.numeric);
-        const temp_var = Declaration{
-            .var_dec = .{
-                .name = "tmp",
-                .offset = address,
-                .type = DataType.numeric,
-            },
-        };
-        try self.variables.append(temp_var);
-
-        while (lexer.peek()) |operand| {
-            switch (operand.kind) {
-                .Plus => {
-                    _ = try getAndExpect(lexer, TokenKind.Plus);
-                    const rhs_opt: ?Arg = try self.parsePrimary(lexer);
-                    const rhs = rhs_opt.?;
-                    try self.operations.append(.{ .infix_plus = .{ .offset = address, .lhs = lhs, .rhs = rhs } });
-                    lhs = Arg{ .variable = address };
-                },
-                .Minus => {
-                    _ = try getAndExpect(lexer, TokenKind.Minus);
-                    const rhs_opt: ?Arg = try self.parsePrimary(lexer);
-                    const rhs = rhs_opt.?;
-                    try self.operations.append(.{ .infix_minus = .{ .offset = address, .lhs = lhs, .rhs = rhs } });
-                    lhs = Arg{ .variable = address };
-                },
-                else => {
-                    break;
-                },
-            }
-        }
-        return Arg{ .variable = address };
-    } else {
+    if (!isOperator(lexer.peek())) {
         return lhs;
     }
+    const address = self.calcVarOffset(DataType.numeric);
+    const temp_var = Declaration{
+        .var_dec = .{
+            .name = "tmp",
+            .offset = address,
+            .type = DataType.numeric,
+        },
+    };
+    try self.variables.append(temp_var);
+    while (lexer.peek()) |operand| {
+        switch (operand.kind) {
+            .Plus => {
+                _ = try getAndExpect(lexer, TokenKind.Plus);
+                const rhs = try self.parsePrimary(lexer);
+                try self.operations.append(.{ .infix_plus = .{ .offset = address, .lhs = lhs, .rhs = rhs } });
+            },
+            .Minus => {
+                _ = try getAndExpect(lexer, TokenKind.Minus);
+                const rhs = try self.parsePrimary(lexer);
+                try self.operations.append(.{ .infix_minus = .{ .offset = address, .lhs = lhs, .rhs = rhs } });
+            },
+            else => break,
+        }
+        lhs = Arg{ .variable = address };
+    }
+    return Arg{ .variable = address };
 }
 
 pub fn parseBody(self: *@This(), lexer: *Lexer) !void {
@@ -246,26 +237,22 @@ pub fn parseBody(self: *@This(), lexer: *Lexer) !void {
                     return error.UnexpectedToken;
                 };
 
-                const opt_arg: ?Arg = try self.parsePrimary(lexer);
-                if (opt_arg) |arg| {
-                    _ = try getAndExpect(lexer, TokenKind.EndOfLine);
-                    try self.operations.append(.{
-                        .assign = .{
-                            .offset = declaration.var_dec.offset,
-                            .arg = arg,
-                        },
-                    });
-                }
+                const arg = try self.compileExpression(lexer);
+                _ = try getAndExpect(lexer, TokenKind.EndOfLine);
+                try self.operations.append(.{
+                    .assign = .{
+                        .offset = declaration.var_dec.offset,
+                        .arg = arg,
+                    },
+                });
             } else if (peek_token.kind == TokenKind.OpenParent) {
                 _ = try getAndExpect(lexer, TokenKind.OpenParent);
 
                 // TODO: iterate arguments list
                 var args = std.ArrayList(Arg).init(self.allocator);
-                const opt_arg: ?Arg = try self.compileExpression(lexer);
+                const arg = try self.compileExpression(lexer);
+                try args.append(arg);
 
-                if (opt_arg) |arg| {
-                    try args.append(arg);
-                }
                 _ = try getAndExpect(lexer, TokenKind.CloseParent);
                 _ = try getAndExpect(lexer, TokenKind.EndOfLine);
 
@@ -359,7 +346,7 @@ pub fn build(self: *@This()) !void {
                         else => {},
                     }
                     switch (infix_plus.rhs) {
-                        .variable => |rhs_offset| try writer.print("  add rax, [rbp - {d}] \n", .{rhs_offset}),
+                        .variable => |rhs_offset| try writer.print("  sub rax, [rbp - {d}] \n", .{rhs_offset}),
                         .integerLiteral => |rhs_value| try writer.print("  sub rax, {d} \n", .{rhs_value}),
                         else => {},
                     }
