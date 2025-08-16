@@ -1,4 +1,4 @@
-Program Hello 
+Program Main 
 var h: numeric
 var e: numeric
 var l1: numeric

@@ -23,8 +23,8 @@ const Declaration = union(DeclarationType) {
 const VariableList = std.ArrayList(Declaration);
 
 // expressions
-const InstructionType = enum { assign, infix_plus, call };
-const Instruction = union(InstructionType) {
+const OpType = enum { assign, infix_plus, infix_minus, call };
+const Op = union(OpType) {
     assign: struct {
         offset: usize,
         arg: Arg,
@@ -34,12 +34,17 @@ const Instruction = union(InstructionType) {
         lhs: Arg,
         rhs: Arg,
     },
+    infix_minus: struct {
+        offset: usize,
+        lhs: Arg,
+        rhs: Arg,
+    },
     call: struct {
         name: []const u8,
         args: []const Arg,
     },
 };
-const OperationList = std.ArrayList(Instruction);
+const OperationList = std.ArrayList(Op);
 
 allocator: std.mem.Allocator,
 variables: VariableList,
@@ -174,6 +179,58 @@ pub fn parsePrimary(self: *@This(), lexer: *Lexer) !?Arg {
     return arg;
 }
 
+fn isOperator(token: ?Lexer.Token) bool {
+    if (token) |t| {
+        return switch (t.kind) {
+            .Plus => true,
+            .Minus => true,
+            else => false,
+        };
+    } else return false;
+}
+
+pub fn compileExpression(self: *@This(), lexer: *Lexer) !?Arg {
+    const lhs_opt: ?Arg = try self.parsePrimary(lexer);
+    var lhs = lhs_opt.?;
+
+    if (isOperator(lexer.peek())) {
+        const address = self.calcVarOffset(DataType.numeric);
+        const temp_var = Declaration{
+            .var_dec = .{
+                .name = "tmp",
+                .offset = address,
+                .type = DataType.numeric,
+            },
+        };
+        try self.variables.append(temp_var);
+
+        while (lexer.peek()) |operand| {
+            switch (operand.kind) {
+                .Plus => {
+                    _ = try getAndExpect(lexer, TokenKind.Plus);
+                    const rhs_opt: ?Arg = try self.parsePrimary(lexer);
+                    const rhs = rhs_opt.?;
+                    try self.operations.append(.{ .infix_plus = .{ .offset = address, .lhs = lhs, .rhs = rhs } });
+                    lhs = Arg{ .variable = address };
+                },
+                .Minus => {
+                    _ = try getAndExpect(lexer, TokenKind.Minus);
+                    const rhs_opt: ?Arg = try self.parsePrimary(lexer);
+                    const rhs = rhs_opt.?;
+                    try self.operations.append(.{ .infix_minus = .{ .offset = address, .lhs = lhs, .rhs = rhs } });
+                    lhs = Arg{ .variable = address };
+                },
+                else => {
+                    break;
+                },
+            }
+        }
+        return Arg{ .variable = address };
+    } else {
+        return lhs;
+    }
+}
+
 pub fn parseBody(self: *@This(), lexer: *Lexer) !void {
     while (lexer.next()) |current| {
         if (current.kind == TokenKind.Id) {
@@ -204,7 +261,8 @@ pub fn parseBody(self: *@This(), lexer: *Lexer) !void {
 
                 // TODO: iterate arguments list
                 var args = std.ArrayList(Arg).init(self.allocator);
-                const opt_arg: ?Arg = try self.parsePrimary(lexer);
+                const opt_arg: ?Arg = try self.compileExpression(lexer);
+
                 if (opt_arg) |arg| {
                     try args.append(arg);
                 }
@@ -291,7 +349,21 @@ pub fn build(self: *@This()) !void {
                         .integerLiteral => |rhs_value| try writer.print("  add rax, {d} \n", .{rhs_value}),
                         else => {},
                     }
-                    try writer.print("  mov [rbp - {d}] rax\n", .{target_offset});
+                    try writer.print("  mov [rbp - {d}], rax\n", .{target_offset});
+                },
+                .infix_minus => |infix_plus| {
+                    const target_offset = infix_plus.offset;
+                    switch (infix_plus.lhs) {
+                        .variable => |lhs_offset| try writer.print("  mov rax, [rbp - {d}] \n", .{lhs_offset}),
+                        .integerLiteral => |lhs_value| try writer.print("  mov rax, {d} \n", .{lhs_value}),
+                        else => {},
+                    }
+                    switch (infix_plus.rhs) {
+                        .variable => |rhs_offset| try writer.print("  add rax, [rbp - {d}] \n", .{rhs_offset}),
+                        .integerLiteral => |rhs_value| try writer.print("  sub rax, {d} \n", .{rhs_value}),
+                        else => {},
+                    }
+                    try writer.print("  mov [rbp - {d}], rax\n", .{target_offset});
                 },
                 .call => |call| {
                     // try writer.print("  ;function call\n", .{});

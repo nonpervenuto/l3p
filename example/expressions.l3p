@@ -1,0 +1,12 @@
+Program Main 
+begin
+    putchar( 65 )
+    putchar( 65 + 1 )
+    putchar( 65 + 1 + 1 )
+    putchar( 65 + 1 + 1 + 1 )
+    putchar( 68 - 1 - 1 - 1 )
+    putchar( 68 - 1 - 1)
+    putchar( 68 - 1 )
+    putchar( 68 )
+    putchar( 65 + 2000 + 20 - 10 - 10 - 2000)
+end
