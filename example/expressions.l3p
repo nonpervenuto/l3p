@@ -1,6 +1,6 @@
 Program Main 
 var a : numeric
 begin
-    a:= 6 * 7 + 1 - 5 * 20 / 2 + 40 - 20 + 8 / 4 + 5 - 100 / 10 * 2  
-    printf('Var a: %d\n', a)
+    a:= 1 - 5 * 20 / 2 + 40 - 20 + 8 / 4 + 5 - 100 / 10 * 2  
+    printf('Var a: %d\n', 6 * 7 + a)
 end
