@@ -1,0 +1,11 @@
+Program TestWhile
+var i : numeric
+begin
+  i := 1
+  while i < 10 do
+    begin
+      printf('Var: %d\n', i)
+      i := i + 1
+    end
+  endwhile
+end

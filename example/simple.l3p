@@ -1,0 +1,19 @@
+Program Aseo
+begin
+
+  function fatt(n: integer) : integer
+    return if n=0 then 1 else n*fatt(n-1) endif
+  end fatt
+
+  function fattlist(k :integer) :list
+    var result:list
+    begin
+      result:=[]
+      for i:=1 to k do
+        ; append
+        result:=result & [ fatt(i) ]
+      endfor
+    return result
+  end fattlistend
+end
+

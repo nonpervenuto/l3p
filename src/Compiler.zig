@@ -23,8 +23,14 @@ const Declaration = union(DeclarationType) {
 const VariableList = std.ArrayList(Declaration);
 
 // expressions
-const OpType = enum { assign, infix_plus, infix_minus, infix_multiply, infix_divide, call };
+const OpType = enum { label, jump, jump_if_false, assign, infix_plus, infix_minus, infix_multiply, infix_divide, infix_less, call };
 const Op = union(OpType) {
+    label: usize,
+    jump: usize,
+    jump_if_false: struct {
+        label: usize,
+        arg: Arg,
+    },
     assign: struct {
         offset: usize,
         arg: Arg,
@@ -49,6 +55,11 @@ const Op = union(OpType) {
         lhs: Arg,
         rhs: Arg,
     },
+    infix_less: struct {
+        offset: usize,
+        lhs: Arg,
+        rhs: Arg,
+    },
     call: struct {
         name: []const u8,
         args: []const Arg,
@@ -59,6 +70,7 @@ const OperationList = std.ArrayList(Op);
 allocator: std.mem.Allocator,
 variables: VariableList,
 operations: OperationList,
+jump_labels: usize = 0,
 
 fn findVariable(self: *@This(), name: []const u8) ?Declaration {
     for (self.variables.items) |variable| {
@@ -115,8 +127,8 @@ pub fn compile(self: *@This(), path: []const u8, buffer: []const u8) !void {
 
     // Program
     _ = try getAndExpectId(&lexer, Lexer.TokenKind.Keyword, "PROGRAM");
-    const program_name = try getAndExpect(&lexer, Lexer.TokenKind.Id);
-    std.log.debug("Program name: {s}", .{program_name.token});
+    _ = try getAndExpect(&lexer, Lexer.TokenKind.Id);
+    // std.log.debug("Program name: {s}", .{program_name.token});
     _ = try getAndExpect(&lexer, Lexer.TokenKind.EndOfLine);
 
     while (lexer.next()) |current| {
@@ -149,6 +161,7 @@ pub fn compile(self: *@This(), path: []const u8, buffer: []const u8) !void {
             //
         } else if (current.kind == TokenKind.Keyword and Strings.eqlIgnoreCase(current.token, "BEGIN")) {
             _ = try getAndExpect(&lexer, TokenKind.EndOfLine);
+            // std.debug.print("BEGIN\n", .{});
             try self.parseBody(&lexer);
             _ = try getAndExpect(&lexer, TokenKind.EndOfLine);
         }
@@ -190,7 +203,7 @@ pub fn parsePrimary(self: *@This(), lexer: *Lexer) !Arg {
 
 fn isOperator(k: TokenKind) bool {
     return switch (k) {
-        .Plus, .Minus, .Multiply, .Divide => true,
+        .Plus, .Minus, .Multiply, .Divide, .Less, .LessEqual, .Greater, .GreaterEqual => true,
         else => false,
     };
 }
@@ -199,6 +212,7 @@ fn getPrecedence(k: TokenKind) usize {
     return switch (k) {
         .Plus, .Minus => 1,
         .Multiply, .Divide => 2,
+        .Less, .LessEqual, .Greater, .GreaterEqual => 3,
         else => 0,
     };
 }
@@ -220,16 +234,14 @@ pub fn compileExpressionRecursive(self: *@This(), lexer: *Lexer, arg: Arg, prece
 
         lookahead = lexer.peek().?;
         if (isOperator(lookahead.kind) and getPrecedence(lookahead.kind) > getPrecedence(op)) {
-            const add: usize = if (getPrecedence(lookahead.kind) > getPrecedence(op)) 1 else 0;
-            const new_precedence: usize = getPrecedence(op) + add;
-            rhs = try self.compileExpressionRecursive(lexer, rhs, new_precedence);
+            rhs = try self.compileExpressionRecursive(lexer, rhs, getPrecedence(op) + 1);
             lookahead = lexer.peek().?;
         }
-        // std.debug.print("{} {} {}\n", .{ lhs, op, rhs });
+
         const address = self.calcVarOffset(DataType.numeric);
         const temp_var = Declaration{
             .var_dec = .{
-                .name = "tmp",
+                .name = "",
                 .offset = address,
                 .type = DataType.numeric,
             },
@@ -249,7 +261,10 @@ pub fn compileExpressionRecursive(self: *@This(), lexer: *Lexer, arg: Arg, prece
             .Divide => try self.operations.append(.{
                 .infix_divide = .{ .offset = address, .lhs = lhs, .rhs = rhs },
             }),
-            else => break,
+            .Less => try self.operations.append(.{
+                .infix_less = .{ .offset = address, .lhs = lhs, .rhs = rhs },
+            }),
+            else => @panic("Not implemented"),
         }
         lhs = Arg{ .variable = address };
     }
@@ -258,7 +273,41 @@ pub fn compileExpressionRecursive(self: *@This(), lexer: *Lexer, arg: Arg, prece
 
 pub fn parseBody(self: *@This(), lexer: *Lexer) !void {
     while (lexer.next()) |current| {
-        if (current.kind == TokenKind.Id) {
+        // std.debug.print("{any}", .{current});
+
+        if (current.kind == TokenKind.Keyword and Strings.eqlIgnoreCase(current.token, "WHILE")) {
+            // Create label before while expression
+
+            const inner_label = self.jump_labels;
+            try self.operations.append(.{ .label = inner_label });
+
+            // while boolean expression
+            const arg = try self.compileExpression(lexer);
+
+            // Jump to label after while
+            self.jump_labels += 1;
+            const after_while_label = self.jump_labels;
+            const jump_if = Op{ .jump_if_false = .{ .label = after_while_label, .arg = arg } };
+            try self.operations.append(jump_if);
+
+            _ = try getAndExpectId(lexer, TokenKind.Keyword, "DO"); // DO
+            _ = try getAndExpect(lexer, TokenKind.EndOfLine);
+
+            _ = try getAndExpectId(lexer, TokenKind.Keyword, "BEGIN"); // BEGIN
+            _ = try getAndExpect(lexer, TokenKind.EndOfLine);
+
+            try self.parseBody(lexer);
+
+            _ = try getAndExpect(lexer, TokenKind.EndOfLine);
+
+            _ = try getAndExpectId(lexer, TokenKind.Keyword, "ENDWHILE"); // BEGIN
+            _ = try getAndExpect(lexer, TokenKind.EndOfLine);
+
+            // Jump to start of while
+            try self.operations.append(.{ .jump = inner_label });
+            // Create label after while
+            try self.operations.append(.{ .label = after_while_label });
+        } else if (current.kind == TokenKind.Id) {
             const id = current.token;
             const peek_token = lexer.peek().?;
 
@@ -347,6 +396,23 @@ pub fn build(self: *@This()) !void {
         // assign value
         for (self.operations.items) |operation| {
             switch (operation) {
+                .label => |index| {
+                    try writer.print("label_{d}: \n", .{index});
+                },
+                .jump => |index| {
+                    try writer.print("  jmp label_{d}\n", .{index});
+                },
+                .jump_if_false => |jump_if_false| {
+                    const target = jump_if_false.label;
+                    const arg = jump_if_false.arg;
+                    switch (arg) {
+                        .variable => |lhs_offset| try writer.print("  mov rax, [rbp - {d}] \n", .{lhs_offset}),
+                        .integerLiteral => |lhs_value| try writer.print("  mov rax, {d} \n", .{lhs_value}),
+                        else => {},
+                    }
+                    try writer.print("  cmp rax, 0\n", .{});
+                    try writer.print("  je label_{d}\n", .{target});
+                },
                 .assign => |assign| {
                     const target = assign.offset;
                     switch (assign.arg) {
@@ -424,6 +490,22 @@ pub fn build(self: *@This()) !void {
                     try writer.print("  div rbx\n", .{});
                     // ; RAX = RAX / RBX
                     // , RDX = RAX % RBX
+                    try writer.print("  mov [rbp - {d}], rax\n", .{target_offset});
+                },
+                .infix_less => |infix_less| {
+                    const target_offset = infix_less.offset;
+                    switch (infix_less.lhs) {
+                        .variable => |lhs_offset| try writer.print("  mov rax, [rbp - {d}] \n", .{lhs_offset}),
+                        .integerLiteral => |lhs_value| try writer.print("  mov rax, {d} \n", .{lhs_value}),
+                        else => {},
+                    }
+                    switch (infix_less.rhs) {
+                        .variable => |rhs_offset| try writer.print("  mov rbx, [rbp - {d}]\n", .{rhs_offset}),
+                        .integerLiteral => |rhs_value| try writer.print("  mov rbx, {d} \n", .{rhs_value}),
+                        else => {},
+                    }
+                    try writer.print("  cmp rax, rbx\n", .{});
+                    try writer.print("  setl al\n", .{});
                     try writer.print("  mov [rbp - {d}], rax\n", .{target_offset});
                 },
                 .call => |call| {

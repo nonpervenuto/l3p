@@ -2,7 +2,16 @@ const std = @import("std");
 const upperString = std.ascii.upperString;
 const eql = std.mem.eql;
 
-pub const keywords = [_][]const u8{ "PROGRAM", "VAR", "NUMERIC", "BEGIN", "END" };
+pub const keywords = [_][]const u8{
+    "PROGRAM",
+    "VAR",
+    "NUMERIC",
+    "BEGIN",
+    "WHILE", // Mentre
+    "DO", // Fai
+    "ENDWHILE", // Finementre
+    "END",
+};
 
 pub const TokenKind = enum {
     Id,
@@ -25,6 +34,10 @@ pub const TokenKind = enum {
     Colon,
     ColonEqual,
     SemiColon,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
     EndOfLine,
     Unknown,
 };
@@ -148,6 +161,22 @@ pub fn next(self: *@This()) ?Token {
                 kind = TokenKind.Minus;
                 if (self.token_end < eof and self.buffer[self.token_end] == '=') {
                     kind = TokenKind.MinusEqual;
+                    self.token_end += 1;
+                }
+            },
+            '<' => {
+                self.token_end = self.token_start + 1;
+                kind = TokenKind.Less;
+                if (self.token_end < eof and self.buffer[self.token_end] == '=') {
+                    kind = TokenKind.LessEqual;
+                    self.token_end += 1;
+                }
+            },
+            '>' => {
+                self.token_end = self.token_start + 1;
+                kind = TokenKind.Greater;
+                if (self.token_end < eof and self.buffer[self.token_end] == '=') {
+                    kind = TokenKind.GreaterEqual;
                     self.token_end += 1;
                 }
             },
