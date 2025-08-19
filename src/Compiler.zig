@@ -1,5 +1,4 @@
 const std = @import("std");
-const Strings = @import("Strings.zig");
 const Lexer = @import("Lexer.zig");
 const Token = Lexer.Token;
 const TokenKind = Lexer.TokenKind;
@@ -105,7 +104,7 @@ fn findVariable(self: *@This(), name: []const u8) ?Declaration {
     for (self.variables.items) |variable| {
         switch (variable) {
             .var_dec => |var_dec| {
-                if (Strings.eqlIgnoreCase(var_dec.name, name)) {
+                if (std.ascii.eqlIgnoreCase(var_dec.name, name)) {
                     return variable;
                 }
             },
@@ -155,7 +154,7 @@ pub fn compile(self: *@This(), path: []const u8, buffer: []const u8) !void {
     var lexer = Lexer.init(path, buffer);
 
     // Program
-    try getAndExpect(&lexer, &[_]TokenKind{ .Program, .Identifier, .EndOfLine });
+    try getAndExpect(&lexer, .{ .Program, .Identifier, .EndOfLine });
     while (lexer.next()) |current| {
         if (current.kind == TokenKind.Var) {
             const var_name_token = lexer.next();
@@ -163,7 +162,7 @@ pub fn compile(self: *@This(), path: []const u8, buffer: []const u8) !void {
             const var_name = var_name_token.?.token;
 
             // TODO: parse data types
-            try getAndExpect(&lexer, &[_]TokenKind{ .Colon, .Numeric, .EndOfLine });
+            try getAndExpect(&lexer, .{ .Colon, .Numeric, .EndOfLine });
 
             if (self.findVariable(var_name)) |_| {
                 try printError(var_name_token, "Variable '{s}' already declared\n", .{
@@ -183,9 +182,9 @@ pub fn compile(self: *@This(), path: []const u8, buffer: []const u8) !void {
             continue;
             //
         } else if (current.kind == TokenKind.Begin) {
-            try getAndExpect(&lexer, &[_]TokenKind{.EndOfLine});
-            try self.parseBody(&lexer, &[_]TokenKind{.End});
-            try getAndExpect(&lexer, &[_]TokenKind{ .End, .EndOfLine });
+            try getAndExpect(&lexer, .{.EndOfLine});
+            try self.parseBody(&lexer, .{.End});
+            try getAndExpect(&lexer, .{ .End, .EndOfLine });
         }
     }
 
@@ -309,15 +308,14 @@ pub fn compileExpressionRecursive(self: *@This(), lexer: *Lexer, arg: Arg, prece
     }
     return lhs;
 }
-
-pub fn parseBody(self: *@This(), lexer: *Lexer, comptime kinds: []const TokenKind) CompileError!void {
+pub fn parseBody(self: *@This(), lexer: *Lexer, close_body_tags: anytype) CompileError!void {
     while (lexer.peek()) |peek| {
         if (peek.kind == TokenKind.If) {
-            try getAndExpect(lexer, &[_]TokenKind{.If});
+            try getAndExpect(lexer, .{.If});
 
             // if boolean expression
             var arg = try self.compileExpression(lexer);
-            try getAndExpect(lexer, &[_]TokenKind{ .Then, .EndOfLine });
+            try getAndExpect(lexer, .{ .Then, .EndOfLine });
 
             self.jump_labels += 1;
             const jump_out = self.jump_labels;
@@ -326,12 +324,12 @@ pub fn parseBody(self: *@This(), lexer: *Lexer, comptime kinds: []const TokenKin
             var jump_forward = self.jump_labels;
             try self.operations.append(Op{ .jump_if_false = .{ .label = jump_forward, .arg = arg } });
 
-            try self.parseBody(lexer, &[_]TokenKind{ .Else, .ElseIf, .EndIf });
+            try self.parseBody(lexer, .{ .Else, .ElseIf, .EndIf });
             try self.operations.append(Op{ .jump = jump_out });
             var nextToken = lexer.peek();
 
             while (nextToken.?.kind == .ElseIf) {
-                try getAndExpect(lexer, &[_]TokenKind{.ElseIf});
+                try getAndExpect(lexer, .{.ElseIf});
 
                 try self.operations.append(.{ .label = jump_forward });
                 self.jump_labels += 1;
@@ -340,24 +338,24 @@ pub fn parseBody(self: *@This(), lexer: *Lexer, comptime kinds: []const TokenKin
                 arg = try self.compileExpression(lexer);
 
                 // Consume Then
-                try getAndExpect(lexer, &[_]TokenKind{ .Then, .EndOfLine });
+                try getAndExpect(lexer, .{ .Then, .EndOfLine });
                 try self.operations.append(Op{ .jump_if_false = .{ .label = jump_forward, .arg = arg } });
-                try self.parseBody(lexer, &[_]TokenKind{ .ElseIf, .Else, .EndIf });
+                try self.parseBody(lexer, .{ .ElseIf, .Else, .EndIf });
                 try self.operations.append(Op{ .jump = jump_out });
 
                 nextToken = lexer.peek();
             }
 
             if (nextToken.?.kind == .Else) {
-                try getAndExpect(lexer, &[_]TokenKind{ .Else, .EndOfLine });
+                try getAndExpect(lexer, .{ .Else, .EndOfLine });
                 try self.operations.append(.{ .label = jump_forward });
-                try self.parseBody(lexer, &[_]TokenKind{.EndIf});
+                try self.parseBody(lexer, .{.EndIf});
             }
 
-            try getAndExpect(lexer, &[_]TokenKind{ .EndIf, .EndOfLine });
+            try getAndExpect(lexer, .{ .EndIf, .EndOfLine });
             try self.operations.append(.{ .label = jump_out });
         } else if (peek.kind == TokenKind.While) {
-            try getAndExpect(lexer, &[_]TokenKind{.While});
+            try getAndExpect(lexer, .{.While});
 
             // Create label before while expression
             self.jump_labels += 1;
@@ -373,9 +371,9 @@ pub fn parseBody(self: *@This(), lexer: *Lexer, comptime kinds: []const TokenKin
             const jump_if = Op{ .jump_if_false = .{ .label = after_while_label, .arg = arg } };
             try self.operations.append(jump_if);
 
-            try getAndExpect(lexer, &[_]TokenKind{ .Do, .EndOfLine });
-            try self.parseBody(lexer, &[_]TokenKind{.EndWhile});
-            try getAndExpect(lexer, &[_]TokenKind{ .EndWhile, .EndOfLine });
+            try getAndExpect(lexer, .{ .Do, .EndOfLine });
+            try self.parseBody(lexer, .{.EndWhile});
+            try getAndExpect(lexer, .{ .EndWhile, .EndOfLine });
 
             // Jump to start of while
             try self.operations.append(.{ .jump = inner_label });
@@ -387,7 +385,7 @@ pub fn parseBody(self: *@This(), lexer: *Lexer, comptime kinds: []const TokenKin
 
             // assign
             if (peek_token.kind == TokenKind.ColonEqual) {
-                try getAndExpect(lexer, &[_]TokenKind{.ColonEqual});
+                try getAndExpect(lexer, .{.ColonEqual});
 
                 const declaration = self.findVariable(id) orelse {
                     try printError(peek, "Variable '{s}' not found\n", .{id});
@@ -396,7 +394,7 @@ pub fn parseBody(self: *@This(), lexer: *Lexer, comptime kinds: []const TokenKin
 
                 const arg = try self.compileExpression(lexer);
 
-                try getAndExpect(lexer, &[_]TokenKind{.EndOfLine});
+                try getAndExpect(lexer, .{.EndOfLine});
                 try self.operations.append(.{
                     .assign = .{
                         .offset = declaration.var_dec.offset,
@@ -404,7 +402,7 @@ pub fn parseBody(self: *@This(), lexer: *Lexer, comptime kinds: []const TokenKin
                     },
                 });
             } else if (peek_token.kind == TokenKind.OpenParent) {
-                try getAndExpect(lexer, &[_]TokenKind{.OpenParent});
+                try getAndExpect(lexer, .{.OpenParent});
 
                 // TODO: iterate arguments list
                 var args = std.ArrayList(Arg).init(self.allocator);
@@ -417,7 +415,7 @@ pub fn parseBody(self: *@This(), lexer: *Lexer, comptime kinds: []const TokenKin
                         _ = lexer.next();
                     }
                 }
-                try getAndExpect(lexer, &[_]TokenKind{ .CloseParent, .EndOfLine });
+                try getAndExpect(lexer, .{ .CloseParent, .EndOfLine });
 
                 try self.operations.append(.{ .call = .{
                     .name = id,
@@ -425,8 +423,12 @@ pub fn parseBody(self: *@This(), lexer: *Lexer, comptime kinds: []const TokenKin
                 } });
             }
         } else {
-            for (kinds) |end| {
-                if (peek.kind == end) {
+            // Each body can close with a different tag.
+            // For example 'while' must be closed with 'endwhile',
+            // 'if' can be closed with an 'elseif' or an 'else' or an 'endif'
+            const fields = std.meta.fields(@TypeOf(close_body_tags));
+            inline for (fields) |field| {
+                if (peek.kind == @field(close_body_tags, field.name)) {
                     return;
                 }
             }
@@ -726,9 +728,10 @@ pub fn expect(token: ?Token, kind: TokenKind) CompileError!void {
     }
 }
 
-pub fn getAndExpect(lexer: *Lexer, comptime kinds: []const TokenKind) CompileError!void {
-    for (kinds) |kind| {
-        try expect(lexer.next(), kind);
+pub fn getAndExpect(lexer: *Lexer, comptime kinds: anytype) !void {
+    const fields = std.meta.fields(@TypeOf(kinds));
+    inline for (fields) |field| {
+        try expect(lexer.next(), @field(kinds, field.name));
     }
 }
 
