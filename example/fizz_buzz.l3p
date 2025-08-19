@@ -1,0 +1,17 @@
+Program TestIF
+var i : numeric
+begin
+  i := 0
+    while i < 100 do 
+      if i % 3 = 0 and i % 5 = 0 then
+        printf('FizzBuzz\n', i)
+      elseif i % 3 = 0 then 
+        printf('Fizz\n', i)
+      elseif i % 5 = 0 then
+        printf('Buzz\n', i)
+      else 
+        printf('%d\n', i)
+      endif
+      i := i + 1
+    endwhile
+end

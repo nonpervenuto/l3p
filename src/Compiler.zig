@@ -23,7 +23,21 @@ const Declaration = union(DeclarationType) {
 const VariableList = std.ArrayList(Declaration);
 
 // expressions
-const OpType = enum { label, jump, jump_if_false, assign, infix_plus, infix_minus, infix_multiply, infix_divide, infix_less, call };
+const OpType = enum {
+    label,
+    jump,
+    jump_if_false,
+    assign,
+    infix_plus,
+    infix_minus,
+    infix_multiply,
+    infix_divide,
+    infix_less,
+    infix_modulo,
+    infix_equal,
+    infix_and,
+    call,
+};
 const Op = union(OpType) {
     label: usize,
     jump: usize,
@@ -56,6 +70,21 @@ const Op = union(OpType) {
         rhs: Arg,
     },
     infix_less: struct {
+        offset: usize,
+        lhs: Arg,
+        rhs: Arg,
+    },
+    infix_modulo: struct {
+        offset: usize,
+        lhs: Arg,
+        rhs: Arg,
+    },
+    infix_equal: struct {
+        offset: usize,
+        lhs: Arg,
+        rhs: Arg,
+    },
+    infix_and: struct {
         offset: usize,
         lhs: Arg,
         rhs: Arg,
@@ -126,7 +155,7 @@ pub fn compile(self: *@This(), path: []const u8, buffer: []const u8) !void {
     var lexer = Lexer.init(path, buffer);
 
     // Program
-    try getAndExpect(&lexer, .{ .Program, .Identifier, .EndOfLine });
+    try getAndExpect(&lexer, &[_]TokenKind{ .Program, .Identifier, .EndOfLine });
     while (lexer.next()) |current| {
         if (current.kind == TokenKind.Var) {
             const var_name_token = lexer.next();
@@ -134,7 +163,7 @@ pub fn compile(self: *@This(), path: []const u8, buffer: []const u8) !void {
             const var_name = var_name_token.?.token;
 
             // TODO: parse data types
-            try getAndExpect(&lexer, .{ .Colon, .Numeric, .EndOfLine });
+            try getAndExpect(&lexer, &[_]TokenKind{ .Colon, .Numeric, .EndOfLine });
 
             if (self.findVariable(var_name)) |_| {
                 try printError(var_name_token, "Variable '{s}' already declared\n", .{
@@ -154,9 +183,9 @@ pub fn compile(self: *@This(), path: []const u8, buffer: []const u8) !void {
             continue;
             //
         } else if (current.kind == TokenKind.Begin) {
-            try getAndExpect(&lexer, .{.EndOfLine});
-            try self.parseBody(&lexer, .End);
-            try getAndExpect(&lexer, .{.EndOfLine});
+            try getAndExpect(&lexer, &[_]TokenKind{.EndOfLine});
+            try self.parseBody(&lexer, &[_]TokenKind{.End});
+            try getAndExpect(&lexer, &[_]TokenKind{ .End, .EndOfLine });
         }
     }
 
@@ -196,16 +225,18 @@ pub fn parsePrimary(self: *@This(), lexer: *Lexer) !Arg {
 
 fn isOperator(k: TokenKind) bool {
     return switch (k) {
-        .Plus, .Minus, .Multiply, .Divide, .Less, .LessEqual, .Greater, .GreaterEqual => true,
+        .Plus, .Minus, .Multiply, .Divide, .Less, .LessEqual, .Greater, .GreaterEqual, .Equal, .Percent, .And => true,
         else => false,
     };
 }
 
 fn getPrecedence(k: TokenKind) usize {
     return switch (k) {
-        .Less, .LessEqual, .Greater, .GreaterEqual => 1,
-        .Plus, .Minus => 2,
-        .Multiply, .Divide => 3,
+        .And => 1,
+        .Less, .LessEqual, .Greater, .GreaterEqual, .Equal => 2,
+        .Plus, .Minus => 3,
+        .Percent => 4,
+        .Multiply, .Divide => 5,
         else => 0,
     };
 }
@@ -251,6 +282,9 @@ pub fn compileExpressionRecursive(self: *@This(), lexer: *Lexer, arg: Arg, prece
             .Multiply => try self.operations.append(.{
                 .infix_multiply = .{ .offset = address, .lhs = lhs, .rhs = rhs },
             }),
+            .Percent => try self.operations.append(.{
+                .infix_modulo = .{ .offset = address, .lhs = lhs, .rhs = rhs },
+            }),
             .Divide => {
                 if (rhs.integerLiteral == 0) {
                     try printError(lookahead, "Division by zero causes illegal behavior\n", .{});
@@ -263,6 +297,12 @@ pub fn compileExpressionRecursive(self: *@This(), lexer: *Lexer, arg: Arg, prece
             .Less => try self.operations.append(.{
                 .infix_less = .{ .offset = address, .lhs = lhs, .rhs = rhs },
             }),
+            .Equal => try self.operations.append(.{
+                .infix_equal = .{ .offset = address, .lhs = lhs, .rhs = rhs },
+            }),
+            .And => try self.operations.append(.{
+                .infix_and = .{ .offset = address, .lhs = lhs, .rhs = rhs },
+            }),
             else => @panic("Not implemented"),
         }
         lhs = Arg{ .variable = address };
@@ -270,13 +310,57 @@ pub fn compileExpressionRecursive(self: *@This(), lexer: *Lexer, arg: Arg, prece
     return lhs;
 }
 
-pub fn parseBody(self: *@This(), lexer: *Lexer, end: TokenKind) !void {
-    while (lexer.next()) |current| {
-        // std.debug.print("{any}", .{current});
+pub fn parseBody(self: *@This(), lexer: *Lexer, comptime kinds: []const TokenKind) CompileError!void {
+    while (lexer.peek()) |peek| {
+        if (peek.kind == TokenKind.If) {
+            try getAndExpect(lexer, &[_]TokenKind{.If});
 
-        if (current.kind == TokenKind.While) {
+            // if boolean expression
+            var arg = try self.compileExpression(lexer);
+            try getAndExpect(lexer, &[_]TokenKind{ .Then, .EndOfLine });
+
+            self.jump_labels += 1;
+            const jump_out = self.jump_labels;
+
+            self.jump_labels += 1;
+            var jump_forward = self.jump_labels;
+            try self.operations.append(Op{ .jump_if_false = .{ .label = jump_forward, .arg = arg } });
+
+            try self.parseBody(lexer, &[_]TokenKind{ .Else, .ElseIf, .EndIf });
+            try self.operations.append(Op{ .jump = jump_out });
+            var nextToken = lexer.peek();
+
+            while (nextToken.?.kind == .ElseIf) {
+                try getAndExpect(lexer, &[_]TokenKind{.ElseIf});
+
+                try self.operations.append(.{ .label = jump_forward });
+                self.jump_labels += 1;
+                jump_forward = self.jump_labels;
+
+                arg = try self.compileExpression(lexer);
+
+                // Consume Then
+                try getAndExpect(lexer, &[_]TokenKind{ .Then, .EndOfLine });
+                try self.operations.append(Op{ .jump_if_false = .{ .label = jump_forward, .arg = arg } });
+                try self.parseBody(lexer, &[_]TokenKind{ .ElseIf, .Else, .EndIf });
+                try self.operations.append(Op{ .jump = jump_out });
+
+                nextToken = lexer.peek();
+            }
+
+            if (nextToken.?.kind == .Else) {
+                try getAndExpect(lexer, &[_]TokenKind{ .Else, .EndOfLine });
+                try self.operations.append(.{ .label = jump_forward });
+                try self.parseBody(lexer, &[_]TokenKind{.EndIf});
+            }
+
+            try getAndExpect(lexer, &[_]TokenKind{ .EndIf, .EndOfLine });
+            try self.operations.append(.{ .label = jump_out });
+        } else if (peek.kind == TokenKind.While) {
+            try getAndExpect(lexer, &[_]TokenKind{.While});
+
             // Create label before while expression
-
+            self.jump_labels += 1;
             const inner_label = self.jump_labels;
             try self.operations.append(.{ .label = inner_label });
 
@@ -289,30 +373,30 @@ pub fn parseBody(self: *@This(), lexer: *Lexer, end: TokenKind) !void {
             const jump_if = Op{ .jump_if_false = .{ .label = after_while_label, .arg = arg } };
             try self.operations.append(jump_if);
 
-            try getAndExpect(lexer, .{ .Do, .EndOfLine });
-            try self.parseBody(lexer, .EndWhile);
-            try getAndExpect(lexer, .{.EndOfLine});
+            try getAndExpect(lexer, &[_]TokenKind{ .Do, .EndOfLine });
+            try self.parseBody(lexer, &[_]TokenKind{.EndWhile});
+            try getAndExpect(lexer, &[_]TokenKind{ .EndWhile, .EndOfLine });
 
             // Jump to start of while
             try self.operations.append(.{ .jump = inner_label });
             // Create label after while
             try self.operations.append(.{ .label = after_while_label });
-        } else if (current.kind == TokenKind.Identifier) {
-            const id = current.token;
+        } else if (peek.kind == TokenKind.Identifier) {
+            const id = lexer.next().?.token;
             const peek_token = lexer.peek().?;
 
             // assign
             if (peek_token.kind == TokenKind.ColonEqual) {
-                try getAndExpect(lexer, .{.ColonEqual});
+                try getAndExpect(lexer, &[_]TokenKind{.ColonEqual});
 
                 const declaration = self.findVariable(id) orelse {
-                    try printError(current, "Variable '{s}' not found\n", .{id});
+                    try printError(peek, "Variable '{s}' not found\n", .{id});
                     return error.UnexpectedToken;
                 };
 
                 const arg = try self.compileExpression(lexer);
 
-                try getAndExpect(lexer, .{.EndOfLine});
+                try getAndExpect(lexer, &[_]TokenKind{.EndOfLine});
                 try self.operations.append(.{
                     .assign = .{
                         .offset = declaration.var_dec.offset,
@@ -320,7 +404,7 @@ pub fn parseBody(self: *@This(), lexer: *Lexer, end: TokenKind) !void {
                     },
                 });
             } else if (peek_token.kind == TokenKind.OpenParent) {
-                try getAndExpect(lexer, .{.OpenParent});
+                try getAndExpect(lexer, &[_]TokenKind{.OpenParent});
 
                 // TODO: iterate arguments list
                 var args = std.ArrayList(Arg).init(self.allocator);
@@ -333,17 +417,21 @@ pub fn parseBody(self: *@This(), lexer: *Lexer, end: TokenKind) !void {
                         _ = lexer.next();
                     }
                 }
-                try getAndExpect(lexer, .{ .CloseParent, .EndOfLine });
+                try getAndExpect(lexer, &[_]TokenKind{ .CloseParent, .EndOfLine });
 
                 try self.operations.append(.{ .call = .{
                     .name = id,
                     .args = try args.toOwnedSlice(),
                 } });
             }
-        } else if (current.kind == end) {
-            break;
         } else {
-            try printError(current, "Unexpected token: {s}", .{current.token});
+            for (kinds) |end| {
+                if (peek.kind == end) {
+                    return;
+                }
+            }
+            try printError(peek, "Unexpected token: {s}", .{peek.token});
+            return;
         }
     }
 }
@@ -462,24 +550,37 @@ pub fn build(self: *@This()) !void {
                     }
                     try writer.print("  mov [rbp - {d}], rax\n", .{target_offset});
                 },
-                .infix_divide => |infix_plus| {
-                    const target_offset = infix_plus.offset;
-                    // Clear RDX
+                .infix_divide => |infix| {
+                    const target_offset = infix.offset;
                     try writer.print("  xor rdx, rdx\n", .{});
-                    switch (infix_plus.lhs) {
+                    switch (infix.lhs) {
                         .variable => |lhs_offset| try writer.print("  mov rax, [rbp - {d}] \n", .{lhs_offset}),
                         .integerLiteral => |lhs_value| try writer.print("  mov rax, {d} \n", .{lhs_value}),
                         else => {},
                     }
-                    switch (infix_plus.rhs) {
+                    switch (infix.rhs) {
                         .variable => |rhs_offset| try writer.print("  mov rbx, [rbp - {d}]\n", .{rhs_offset}),
                         .integerLiteral => |rhs_value| try writer.print("  mov rbx, {d} \n", .{rhs_value}),
                         else => {},
                     }
                     try writer.print("  div rbx\n", .{});
-                    // ; RAX = RAX / RBX
-                    // , RDX = RAX % RBX
                     try writer.print("  mov [rbp - {d}], rax\n", .{target_offset});
+                },
+                .infix_modulo => |infix| {
+                    const target_offset = infix.offset;
+                    try writer.print("  xor rdx, rdx\n", .{});
+                    switch (infix.lhs) {
+                        .variable => |lhs_offset| try writer.print("  mov rax, [rbp - {d}] \n", .{lhs_offset}),
+                        .integerLiteral => |lhs_value| try writer.print("  mov rax, {d} \n", .{lhs_value}),
+                        else => {},
+                    }
+                    switch (infix.rhs) {
+                        .variable => |rhs_offset| try writer.print("  mov rbx, [rbp - {d}]\n", .{rhs_offset}),
+                        .integerLiteral => |rhs_value| try writer.print("  mov rbx, {d} \n", .{rhs_value}),
+                        else => {},
+                    }
+                    try writer.print("  div rbx\n", .{});
+                    try writer.print("  mov [rbp - {d}], rdx\n", .{target_offset});
                 },
                 .infix_less => |infix_less| {
                     const target_offset = infix_less.offset;
@@ -495,6 +596,36 @@ pub fn build(self: *@This()) !void {
                     }
                     try writer.print("  cmp rax, rbx\n", .{});
                     try writer.print("  setl al\n", .{});
+                    try writer.print("  mov [rbp - {d}], rax\n", .{target_offset});
+                },
+                .infix_equal => |infix_less| {
+                    const target_offset = infix_less.offset;
+                    switch (infix_less.lhs) {
+                        .variable => |lhs_offset| try writer.print("  mov rax, [rbp - {d}] \n", .{lhs_offset}),
+                        .integerLiteral => |lhs_value| try writer.print("  mov rax, {d} \n", .{lhs_value}),
+                        else => {},
+                    }
+                    switch (infix_less.rhs) {
+                        .variable => |rhs_offset| try writer.print("  mov rbx, [rbp - {d}]\n", .{rhs_offset}),
+                        .integerLiteral => |rhs_value| try writer.print("  mov rbx, {d} \n", .{rhs_value}),
+                        else => {},
+                    }
+                    try writer.print("  cmp rax, rbx\n", .{});
+                    try writer.print("  sete al\n", .{});
+                    try writer.print("  mov [rbp - {d}], rax\n", .{target_offset});
+                },
+                .infix_and => |infix| {
+                    const target_offset = infix.offset;
+                    switch (infix.lhs) {
+                        .variable => |lhs_offset| try writer.print("  mov rax, [rbp - {d}] \n", .{lhs_offset}),
+                        .integerLiteral => |lhs_value| try writer.print("  mov rax, {d} \n", .{lhs_value}),
+                        else => {},
+                    }
+                    switch (infix.rhs) {
+                        .variable => |rhs_offset| try writer.print("  and rax, [rbp - {d}]\n", .{rhs_offset}),
+                        .integerLiteral => |rhs_value| try writer.print("  and rax, {d} \n", .{rhs_value}),
+                        else => {},
+                    }
                     try writer.print("  mov [rbp - {d}], rax\n", .{target_offset});
                 },
                 .call => |call| {
@@ -595,20 +726,18 @@ pub fn expect(token: ?Token, kind: TokenKind) CompileError!void {
     }
 }
 
-pub fn getAndExpect(lexer: *Lexer, comptime kinds: anytype) CompileError!void {
-    const ArgsType = @TypeOf(kinds);
-    const args_type_info = @typeInfo(ArgsType);
-    if (args_type_info != .@"struct") {
-        @compileError("expected tuple or struct argument, found " ++ @typeName(ArgsType));
-    }
-    const fields_info = args_type_info.@"struct".fields;
-    inline for (fields_info) |field| {
-        const token = lexer.next();
-        try expect(token, @field(kinds, field.name));
+pub fn getAndExpect(lexer: *Lexer, comptime kinds: []const TokenKind) CompileError!void {
+    for (kinds) |kind| {
+        try expect(lexer.next(), kind);
     }
 }
 
 const CompileError = error{
+    OutOfMemory,
+    Overflow,
+    DivisionByZero,
+    InvalidCharacter,
+    InvalidLiteral,
     UnexpectedToken,
 };
 

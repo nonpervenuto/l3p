@@ -10,7 +10,13 @@ pub const keywords = [_][]const u8{
     "WHILE",
     "DO",
     "ENDWHILE",
+    "IF",
+    "THEN",
+    "ELSE",
+    "ELSEIF",
+    "ENDIF",
     "END",
+    "AND",
 };
 
 pub const keywords_map = [_]TokenKind{
@@ -21,7 +27,13 @@ pub const keywords_map = [_]TokenKind{
     .While,
     .Do,
     .EndWhile,
+    .If,
+    .Then,
+    .Else,
+    .ElseIf,
+    .EndIf,
     .End,
+    .And,
 };
 
 pub const TokenKind = enum {
@@ -37,6 +49,8 @@ pub const TokenKind = enum {
     EndWhile,
     End,
     If,
+    Then,
+    Else,
     ElseIf,
     EndIf,
     // Literals
@@ -63,6 +77,9 @@ pub const TokenKind = enum {
     LessEqual,
     Greater,
     GreaterEqual,
+    Percent,
+    And,
+    Or,
     EndOfLine,
     Unknown,
 
@@ -244,6 +261,10 @@ pub fn next(self: *@This()) ?Token {
                     kind = TokenKind.ColonEqual;
                     self.token_end += 1;
                 }
+            },
+            '%' => {
+                self.token_end = self.token_start + 1;
+                kind = TokenKind.Percent;
             },
             '=' => {
                 self.token_end = self.token_start + 1;
