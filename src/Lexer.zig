@@ -7,17 +7,42 @@ pub const keywords = [_][]const u8{
     "VAR",
     "NUMERIC",
     "BEGIN",
-    "WHILE", // Mentre
-    "DO", // Fai
-    "ENDWHILE", // Finementre
+    "WHILE",
+    "DO",
+    "ENDWHILE",
     "END",
 };
 
+pub const keywords_map = [_]TokenKind{
+    .Program,
+    .Var,
+    .Numeric,
+    .Begin,
+    .While,
+    .Do,
+    .EndWhile,
+    .End,
+};
+
 pub const TokenKind = enum {
-    Id,
-    Keyword,
+    Identifier,
+    // keywords
+    Program,
+    Var,
+    Numeric,
+    Real,
+    Begin,
+    While,
+    Do,
+    EndWhile,
+    End,
+    If,
+    ElseIf,
+    EndIf,
+    // Literals
     IntegerLiteral,
     StringLiteral,
+    // Symbols
     OpenParent,
     CloseParent,
     Comment,
@@ -40,6 +65,19 @@ pub const TokenKind = enum {
     GreaterEqual,
     EndOfLine,
     Unknown,
+
+    pub fn getKeyword(needle: []const u8) ?TokenKind {
+        for (keywords, 0..) |keyword, i| {
+            var buffer: [1024]u8 = undefined;
+            if (buffer.len >= needle.len) {
+                const upNeedle = upperString(&buffer, needle);
+                if (eql(u8, upNeedle, keyword)) {
+                    return keywords_map[i];
+                }
+            }
+        }
+        return null;
+    }
 };
 
 pub const Token = struct {
@@ -224,12 +262,13 @@ pub fn next(self: *@This()) ?Token {
                 self.token_end = self.token_start + 1;
                 kind = TokenKind.SemiColon;
             },
-            'a'...'z', 'A'...'Z' => {
+            '_', 'a'...'z', 'A'...'Z' => {
                 self.token_end = self.token_start + 1;
                 while (self.token_end < eof and std.ascii.isAlphanumeric(self.buffer[self.token_end])) {
                     self.token_end += 1;
                 }
-                kind = getTokenKind(self.buffer[self.token_start..self.token_end]);
+                const id = self.buffer[self.token_start..self.token_end];
+                kind = TokenKind.getKeyword(id) orelse TokenKind.Identifier;
             },
             '0'...'9' => {
                 self.token_end = self.token_start + 1;
@@ -265,17 +304,4 @@ pub fn next(self: *@This()) ?Token {
         return plex;
     }
     return null;
-}
-
-pub fn getTokenKind(needle: []const u8) TokenKind {
-    for (keywords) |keyword| {
-        var buffer: [1024]u8 = undefined;
-        if (buffer.len >= needle.len) {
-            const upNeedle = upperString(&buffer, needle);
-            if (eql(u8, upNeedle, keyword)) {
-                return TokenKind.Keyword;
-            }
-        }
-    }
-    return TokenKind.Id;
 }
