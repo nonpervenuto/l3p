@@ -2,7 +2,7 @@ Program TestIF
 var i : numeric
 begin
   i := 0
-    while i < 100 do 
+    while i < 100000 do 
       if i % 3 = 0 and i % 5 = 0 then
         printf('FizzBuzz\n', i)
       elseif i % 3 = 0 then 

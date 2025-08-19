@@ -17,6 +17,7 @@ pub const keywords = [_][]const u8{
     "ENDIF",
     "END",
     "AND",
+    "OR",
 };
 
 pub const keywords_map = [_]TokenKind{
@@ -34,6 +35,7 @@ pub const keywords_map = [_]TokenKind{
     .EndIf,
     .End,
     .And,
+    .Or,
 };
 
 pub const TokenKind = enum {

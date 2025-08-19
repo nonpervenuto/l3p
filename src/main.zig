@@ -1,5 +1,7 @@
 const std = @import("std");
+const Ir = @import("Ir.zig");
 const Compiler = @import("Compiler.zig");
+const Codegen = @import("Codegen.zig");
 
 pub fn main() !void {
     const allocator: std.mem.Allocator = std.heap.page_allocator;
@@ -26,9 +28,10 @@ pub fn main() !void {
         defer allocator.free(buffer);
 
         var compiler = Compiler.init(allocator);
-        compiler.compile(path, buffer) catch {
+        const ir: Ir = compiler.compile(path, buffer) catch {
             return;
         };
-        try compiler.build();
+        var builder = Codegen.init(allocator);
+        try builder.build(ir);
     }
 }
