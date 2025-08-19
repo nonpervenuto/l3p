@@ -67,6 +67,9 @@ pub const TokenKind = enum {
     Unknown,
 
     pub fn getKeyword(needle: []const u8) ?TokenKind {
+        if (keywords.len != keywords_map.len) {
+            @compileError("Keywords and keywords_map must have the same length");
+        }
         for (keywords, 0..) |keyword, i| {
             var buffer: [1024]u8 = undefined;
             if (buffer.len >= needle.len) {

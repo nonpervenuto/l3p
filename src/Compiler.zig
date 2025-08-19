@@ -155,7 +155,7 @@ pub fn compile(self: *@This(), path: []const u8, buffer: []const u8) !void {
             //
         } else if (current.kind == TokenKind.Begin) {
             try getAndExpect(&lexer, .{.EndOfLine});
-            try self.parseBody(&lexer);
+            try self.parseBody(&lexer, .End);
             try getAndExpect(&lexer, .{.EndOfLine});
         }
     }
@@ -203,9 +203,9 @@ fn isOperator(k: TokenKind) bool {
 
 fn getPrecedence(k: TokenKind) usize {
     return switch (k) {
-        .Plus, .Minus => 1,
-        .Multiply, .Divide => 2,
-        .Less, .LessEqual, .Greater, .GreaterEqual => 3,
+        .Less, .LessEqual, .Greater, .GreaterEqual => 1,
+        .Plus, .Minus => 2,
+        .Multiply, .Divide => 3,
         else => 0,
     };
 }
@@ -251,9 +251,15 @@ pub fn compileExpressionRecursive(self: *@This(), lexer: *Lexer, arg: Arg, prece
             .Multiply => try self.operations.append(.{
                 .infix_multiply = .{ .offset = address, .lhs = lhs, .rhs = rhs },
             }),
-            .Divide => try self.operations.append(.{
-                .infix_divide = .{ .offset = address, .lhs = lhs, .rhs = rhs },
-            }),
+            .Divide => {
+                if (rhs.integerLiteral == 0) {
+                    try printError(lookahead, "Division by zero causes illegal behavior\n", .{});
+                    return error.DivisionByZero;
+                }
+                try self.operations.append(.{
+                    .infix_divide = .{ .offset = address, .lhs = lhs, .rhs = rhs },
+                });
+            },
             .Less => try self.operations.append(.{
                 .infix_less = .{ .offset = address, .lhs = lhs, .rhs = rhs },
             }),
@@ -264,7 +270,7 @@ pub fn compileExpressionRecursive(self: *@This(), lexer: *Lexer, arg: Arg, prece
     return lhs;
 }
 
-pub fn parseBody(self: *@This(), lexer: *Lexer) !void {
+pub fn parseBody(self: *@This(), lexer: *Lexer, end: TokenKind) !void {
     while (lexer.next()) |current| {
         // std.debug.print("{any}", .{current});
 
@@ -284,13 +290,8 @@ pub fn parseBody(self: *@This(), lexer: *Lexer) !void {
             try self.operations.append(jump_if);
 
             try getAndExpect(lexer, .{ .Do, .EndOfLine });
-
-            try getAndExpect(lexer, .{ .Begin, .EndOfLine });
-
-            try self.parseBody(lexer);
-
+            try self.parseBody(lexer, .EndWhile);
             try getAndExpect(lexer, .{.EndOfLine});
-            try getAndExpect(lexer, .{ .EndWhile, .EndOfLine });
 
             // Jump to start of while
             try self.operations.append(.{ .jump = inner_label });
@@ -339,7 +340,7 @@ pub fn parseBody(self: *@This(), lexer: *Lexer) !void {
                     .args = try args.toOwnedSlice(),
                 } });
             }
-        } else if (current.kind == TokenKind.End) {
+        } else if (current.kind == end) {
             break;
         } else {
             try printError(current, "Unexpected token: {s}", .{current.token});
@@ -616,7 +617,7 @@ pub fn printError(token: ?Token, comptime fmt: []const u8, args: anytype) !void 
         print("Unexpected 'end of file' \n", .{});
         return error.UnexpectedToken;
     };
-    print("{s}:{d}:{d} L3P Compilation Error\n", .{
+    print("{s}:{d}:{d} : " ++ "\x1b[31m" ++ "L3P Compilation Error\n" ++ "\x1b[0m", .{
         t.file_name,
         t.lineNumber,
         t.token_start,
