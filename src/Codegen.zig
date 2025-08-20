@@ -89,6 +89,11 @@ pub fn build(self: @This(), ir: Ir) !void {
                         },
                     }
                 },
+                .prefix_neg => |prefix| {
+                    try loadReg(w, "  rax", prefix.arg);
+                    try w.print("  neg rax\n", .{});
+                    try w.print("  mov [rbp - {d}], rax\n", .{prefix.offset});
+                },
                 .infix_plus => |infix_plus| {
                     const target_offset = infix_plus.offset;
                     try loadReg(w, "  rax", infix_plus.lhs);

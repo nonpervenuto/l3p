@@ -60,6 +60,37 @@ pub fn compile(self: *@This(), path: []const u8, buffer: []const u8) !Ir {
     // try getAndExpect(&lexer, .{.EndOfLine});
 }
 
+fn isOperator(k: TokenKind) bool {
+    return switch (k) {
+        .Plus,
+        .Minus,
+        .Multiply,
+        .Divide,
+        .Less,
+        .LessEqual,
+        .Greater,
+        .GreaterEqual,
+        .Equal,
+        .Percent,
+        .And,
+        .Or,
+        => true,
+        else => false,
+    };
+}
+
+fn getPrecedence(k: TokenKind) usize {
+    return switch (k) {
+        .And => 1,
+        .Or => 2,
+        .Less, .LessEqual, .Greater, .GreaterEqual, .Equal => 3,
+        .Plus, .Minus => 4,
+        .Percent => 5,
+        .Multiply, .Divide => 6,
+        else => 0,
+    };
+}
+
 pub fn parsePrimary(self: *@This(), lexer: *Lexer) !Ir.Arg {
     const token = lexer.next().?;
     const arg: Ir.Arg = switch (token.kind) {
@@ -83,6 +114,29 @@ pub fn parsePrimary(self: *@This(), lexer: *Lexer) !Ir.Arg {
             try self.ir.variables.append(variable);
             break :arg Ir.Arg{ .dataLiteral = dataOffset };
         },
+        .OpenParent => arg: {
+            const lhs = try self.compileExpression(lexer);
+            try getAndExpect(lexer, .{.CloseParent});
+            break :arg lhs;
+        },
+        .Not => {
+            @panic("Op Not not implemented");
+        },
+        .Minus => arg: {
+            const arg = try self.parsePrimary(lexer);
+            switch (arg) {
+                .integerLiteral => |value| {
+                    break :arg Ir.Arg{ .integerLiteral = -value };
+                },
+                else => {
+                    const address = try self.ir.createTempVar(Ir.DataType.numeric);
+                    try self.ir.operations.append(.{
+                        .prefix_neg = .{ .offset = address, .arg = arg },
+                    });
+                    break :arg Ir.Arg{ .variable = address };
+                },
+            }
+        },
         else => {
             try printError(token, "Unexpected token '{s}'\n", .{token.token});
             return error.UnexpectedToken;
@@ -91,30 +145,9 @@ pub fn parsePrimary(self: *@This(), lexer: *Lexer) !Ir.Arg {
     return arg;
 }
 
-fn isOperator(k: TokenKind) bool {
-    return switch (k) {
-        .Plus, .Minus, .Multiply, .Divide, .Less, .LessEqual, .Greater, .GreaterEqual, .Equal, .Percent, .And, .Or => true,
-        else => false,
-    };
-}
-
-fn getPrecedence(k: TokenKind) usize {
-    return switch (k) {
-        .And => 1,
-        .Or => 2,
-        .Less, .LessEqual, .Greater, .GreaterEqual, .Equal => 3,
-        .Plus, .Minus => 4,
-        .Percent => 5,
-        .Multiply, .Divide => 6,
-        else => 0,
-    };
-}
-
-pub fn compileExpression(self: *@This(), lexer: *Lexer) !Ir.Arg {
+pub fn compileExpression(self: *@This(), lexer: *Lexer) CompileError!Ir.Arg {
     const lhs = try self.parsePrimary(lexer);
-    const res = try self.compileExpressionRecursive(lexer, lhs, 0);
-    // std.debug.print("{} \n", .{res});
-    return res;
+    return try self.compileExpressionRecursive(lexer, lhs, 0);
 }
 
 pub fn compileExpressionRecursive(self: *@This(), lexer: *Lexer, arg: Ir.Arg, precedence: usize) !Ir.Arg {
@@ -131,16 +164,8 @@ pub fn compileExpressionRecursive(self: *@This(), lexer: *Lexer, arg: Ir.Arg, pr
             lookahead = lexer.peek().?;
         }
 
-        const address = self.ir.calcVarOffset(Ir.DataType.numeric);
-        const temp_var = Ir.Declaration{
-            .var_dec = .{
-                .name = "",
-                .offset = address,
-                .type = Ir.DataType.numeric,
-            },
-        };
+        const address = try self.ir.createTempVar(Ir.DataType.numeric);
 
-        try self.ir.variables.append(temp_var);
         switch (op) {
             .Plus => try self.ir.operations.append(.{
                 .infix_plus = .{ .offset = address, .lhs = lhs, .rhs = rhs },
@@ -162,6 +187,9 @@ pub fn compileExpressionRecursive(self: *@This(), lexer: *Lexer, arg: Ir.Arg, pr
                 try self.ir.operations.append(.{
                     .infix_divide = .{ .offset = address, .lhs = lhs, .rhs = rhs },
                 });
+            },
+            .Hat => {
+                @panic("^ non implemented");
             },
             .Less => try self.ir.operations.append(.{
                 .infix_l = .{ .offset = address, .lhs = lhs, .rhs = rhs },
@@ -286,7 +314,6 @@ pub fn parseBody(self: *@This(), lexer: *Lexer, close_body_tags: anytype) Compil
             } else if (peek_token.kind == TokenKind.OpenParent) {
                 try getAndExpect(lexer, .{.OpenParent});
 
-                // TODO: iterate arguments list
                 var args = std.ArrayList(Ir.Arg).init(self.allocator);
 
                 while (lexer.peek().?.kind != TokenKind.CloseParent) {

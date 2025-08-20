@@ -18,6 +18,7 @@ pub const keywords = [_][]const u8{
     "END",
     "AND",
     "OR",
+    "NOT",
 };
 
 pub const keywords_map = [_]TokenKind{
@@ -36,6 +37,7 @@ pub const keywords_map = [_]TokenKind{
     .End,
     .And,
     .Or,
+    .Not,
 };
 
 pub const TokenKind = enum {
@@ -72,6 +74,7 @@ pub const TokenKind = enum {
     MultiplyEqual,
     Divide,
     DivideEqual,
+    Hat,
     Colon,
     ColonEqual,
     SemiColon,
@@ -80,6 +83,7 @@ pub const TokenKind = enum {
     Greater,
     GreaterEqual,
     Percent,
+    Not,
     And,
     Or,
     EndOfLine,
@@ -287,6 +291,10 @@ pub fn next(self: *@This()) ?Token {
             ';' => {
                 self.token_end = self.token_start + 1;
                 kind = TokenKind.SemiColon;
+            },
+            '^' => {
+                self.token_end = self.token_start + 1;
+                kind = TokenKind.Hat;
             },
             '_', 'a'...'z', 'A'...'Z' => {
                 self.token_end = self.token_start + 1;

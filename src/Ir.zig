@@ -24,6 +24,7 @@ pub const OpType = enum {
     jump,
     jump_if_false,
     assign,
+    prefix_neg,
     infix_plus,
     infix_minus,
     infix_multiply,
@@ -46,6 +47,10 @@ pub const Op = union(OpType) {
         arg: Arg,
     },
     assign: struct {
+        offset: usize,
+        arg: Arg,
+    },
+    prefix_neg: struct {
         offset: usize,
         arg: Arg,
     },
@@ -120,6 +125,16 @@ pub const OperationList = std.ArrayList(Op);
 variables: VariableList,
 operations: OperationList,
 jump_labels: usize = 0,
+
+pub fn createTempVar(self: *@This(), dataType: DataType) !usize {
+    const address = self.calcVarOffset(dataType);
+    try self.variables.append(
+        Declaration{
+            .var_dec = .{ .name = "", .offset = address, .type = dataType },
+        },
+    );
+    return address;
+}
 
 pub fn findVariable(self: *@This(), name: []const u8) ?Declaration {
     for (self.variables.items) |variable| {
