@@ -66,6 +66,7 @@ pub const TokenKind = enum {
     Comment,
     Comma,
     Equal,
+    Exclamation,
     Plus,
     PlusEqual,
     Minus,
@@ -75,12 +76,17 @@ pub const TokenKind = enum {
     Divide,
     DivideEqual,
     Hat,
+    Ampersand,
+    Pipe,
     Colon,
     ColonEqual,
+    ExclamationEqual,
     SemiColon,
     Less,
+    LessLess,
     LessEqual,
     Greater,
+    GreaterGreater,
     GreaterEqual,
     Percent,
     Not,
@@ -231,7 +237,10 @@ pub fn next(self: *@This()) ?Token {
             '<' => {
                 self.token_end = self.token_start + 1;
                 kind = TokenKind.Less;
-                if (self.token_end < eof and self.buffer[self.token_end] == '=') {
+                if (self.token_end < eof and self.buffer[self.token_end] == '<') {
+                    kind = TokenKind.LessLess;
+                    self.token_end += 1;
+                } else if (self.token_end < eof and self.buffer[self.token_end] == '=') {
                     kind = TokenKind.LessEqual;
                     self.token_end += 1;
                 }
@@ -239,7 +248,10 @@ pub fn next(self: *@This()) ?Token {
             '>' => {
                 self.token_end = self.token_start + 1;
                 kind = TokenKind.Greater;
-                if (self.token_end < eof and self.buffer[self.token_end] == '=') {
+                if (self.token_end < eof and self.buffer[self.token_end] == '>') {
+                    kind = TokenKind.GreaterGreater;
+                    self.token_end += 1;
+                } else if (self.token_end < eof and self.buffer[self.token_end] == '=') {
                     kind = TokenKind.GreaterEqual;
                     self.token_end += 1;
                 }
@@ -265,6 +277,14 @@ pub fn next(self: *@This()) ?Token {
                 kind = TokenKind.Colon;
                 if (self.token_end < eof and self.buffer[self.token_end] == '=') {
                     kind = TokenKind.ColonEqual;
+                    self.token_end += 1;
+                }
+            },
+            '!' => {
+                self.token_end = self.token_start + 1;
+                kind = TokenKind.Exclamation;
+                if (self.token_end < eof and self.buffer[self.token_end] == '=') {
+                    kind = TokenKind.ExclamationEqual;
                     self.token_end += 1;
                 }
             },
@@ -295,6 +315,14 @@ pub fn next(self: *@This()) ?Token {
             '^' => {
                 self.token_end = self.token_start + 1;
                 kind = TokenKind.Hat;
+            },
+            '&' => {
+                self.token_end = self.token_start + 1;
+                kind = TokenKind.Ampersand;
+            },
+            '|' => {
+                self.token_end = self.token_start + 1;
+                kind = TokenKind.Pipe;
             },
             '_', 'a'...'z', 'A'...'Z' => {
                 self.token_end = self.token_start + 1;

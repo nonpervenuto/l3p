@@ -40,10 +40,10 @@ pub const OpType = enum {
     call,
 };
 pub const Op = union(OpType) {
-    label: usize,
-    jump: usize,
+    label: []const u8,
+    jump: []const u8,
     jump_if_false: struct {
-        label: usize,
+        label: []const u8,
         arg: Arg,
     },
     assign: struct {
@@ -125,6 +125,12 @@ pub const OperationList = std.ArrayList(Op);
 variables: VariableList,
 operations: OperationList,
 jump_labels: usize = 0,
+
+pub fn createLabel(self: *@This(), allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
+    const label = try std.fmt.allocPrint(allocator, "{s}_{d}", .{ name, self.jump_labels });
+    self.jump_labels += 1;
+    return label;
+}
 
 pub fn createTempVar(self: *@This(), dataType: DataType) !usize {
     const address = self.calcVarOffset(dataType);

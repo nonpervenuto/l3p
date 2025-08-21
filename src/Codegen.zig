@@ -57,18 +57,18 @@ pub fn build(self: @This(), ir: Ir) !void {
         // assign value
         for (ir.operations.items) |operation| {
             switch (operation) {
-                .label => |index| {
-                    try w.print("label_{d}: \n", .{index});
+                .label => |label| {
+                    try w.print("{s}: \n", .{label});
                 },
-                .jump => |index| {
-                    try w.print("  jmp label_{d}\n", .{index});
+                .jump => |label| {
+                    try w.print("  jmp {s}\n", .{label});
                 },
                 .jump_if_false => |jump_if_false| {
-                    const target = jump_if_false.label;
+                    const label = jump_if_false.label;
                     const arg = jump_if_false.arg;
                     try loadReg(w, "  rax", arg);
                     try w.print("  cmp rax, 0\n", .{});
-                    try w.print("  je label_{d}\n", .{target});
+                    try w.print("  je {s}\n", .{label});
                 },
                 .assign => |assign| {
                     const target = assign.offset;
