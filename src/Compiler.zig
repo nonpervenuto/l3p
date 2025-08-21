@@ -31,39 +31,62 @@ pub fn init(allocator: std.mem.Allocator) @This() {
 pub fn compile(self: *@This(), path: []const u8, buffer: []const u8) !Ir {
     var lexer = Lexer.init(path, buffer);
     try self.getAndExpect(&lexer, .{ .Program, .Identifier, .EndOfLine });
-    while (lexer.next()) |current| {
-        if (current.kind == TokenKind.Var) {
-            const var_name_token = lexer.next();
-            try self.expect(var_name_token, .Identifier);
-            const var_name = var_name_token.?.token;
 
-            // TODO: parse data types
-            try self.getAndExpect(&lexer, .{ .Colon, .Numeric, .EndOfLine });
+    while (lexer.peek().?.kind == TokenKind.Var) {
+        var vars = std.ArrayList([]const u8).init(self.allocator);
 
-            if (self.ir.findVariable(var_name)) |_| {
-                try self.printError(var_name_token, "Variable '{s}' already declared\n", .{
-                    var_name,
-                });
-                return error.UnexpectedToken;
+        // Parse variable name list
+        try self.getAndExpect(&lexer, .{.Var});
+        while (lexer.peek().?.kind != TokenKind.Colon) {
+            const var_token = try self.getExpected(lexer.next(), .Identifier);
+            try vars.append(var_token.token);
+
+            if (lexer.peek().?.kind == TokenKind.Comma) {
+                try self.getAndExpect(&lexer, .{.Comma});
             }
+        }
 
-            const offset = self.ir.calcVarOffset(Ir.DataType.numeric);
-            const variable = Ir.Declaration{ .var_dec = .{
-                .name = var_name,
-                .offset = offset,
-                .type = Ir.DataType.numeric,
-            } };
+        // Parse data types
+        try self.getAndExpect(&lexer, .{.Colon});
 
-            self.ir.variables.append(variable) catch unreachable;
-            continue;
-            //
-        } else if (current.kind == TokenKind.Begin) {
+        const token = lexer.next();
+        const kind = token.?.kind;
+        if (kind == TokenKind.Numeric) {
             try self.getAndExpect(&lexer, .{.EndOfLine});
-            // parse body until end
-            try self.parseBody(&lexer, .{.End});
-            try self.getAndExpect(&lexer, .{ .End, .EndOfLine });
+            for (vars.items) |var_name| {
+                const offset = self.ir.calcVarOffset(Ir.DataType.numeric);
+                const variable = Ir.Declaration{ .var_dec = .{
+                    .name = var_name,
+                    .offset = offset,
+                    .type = Ir.DataType.numeric,
+                } };
+                self.ir.variables.append(variable) catch unreachable;
+            }
+        } else if (kind == TokenKind.Array) {
+            try self.getAndExpect(&lexer, .{.OpenSquare});
+            const token_array_size = try self.getExpected(lexer.next(), .IntegerLiteral);
+            const array_size = token_array_size.asUsize();
+            _ = array_size;
+            try self.getAndExpect(&lexer, .{ .CloseSquare, .Of, .Numeric, .EndOfLine });
+
+            for (vars.items) |var_name| {
+                const dataOffset = self.ir.calcGlobalOffset();
+                const variable = Ir.Declaration{
+                    .global_dec = .{
+                        .name = var_name,
+                        .address = dataOffset,
+                        .data = null,
+                    },
+                };
+                try self.ir.variables.append(variable);
+            }
         }
     }
+
+    try self.getAndExpect(&lexer, .{ .Begin, .EndOfLine });
+    try self.parseBody(&lexer, .{.End});
+    try self.getAndExpect(&lexer, .{ .End, .EndOfLine });
+
     return self.ir;
 }
 
@@ -139,6 +162,7 @@ pub fn parsePrimary(self: *@This(), lexer: *Lexer) CompileError!Ir.Arg {
         .StringLiteral => arg: {
             const dataOffset = self.ir.calcGlobalOffset();
             const variable = Ir.Declaration{ .global_dec = .{
+                .name = "data",
                 .data = try token.asString(self.allocator),
                 .address = dataOffset,
             } };
@@ -348,7 +372,7 @@ pub fn parseBody(self: *@This(), lexer: *Lexer, close_body_tags: anytype) Compil
     }
 }
 
-pub fn expect(self: *@This(), token: ?Token, kind: TokenKind) CompileError!void {
+pub fn getExpected(self: *@This(), token: ?Token, kind: TokenKind) CompileError!Token {
     const t = token orelse {
         self.printError(null, "Expected {s}, got instead 'end of file' \n", .{
             @tagName(kind),
@@ -363,6 +387,11 @@ pub fn expect(self: *@This(), token: ?Token, kind: TokenKind) CompileError!void 
         }) catch return error.PrintDiagnosticError;
         return error.UnexpectedToken;
     }
+    return t;
+}
+
+pub fn expect(self: *@This(), token: ?Token, kind: TokenKind) CompileError!void {
+    _ = try self.getExpected(token, kind);
 }
 
 pub fn getAndExpect(self: *@This(), lexer: *Lexer, comptime kinds: anytype) !void {

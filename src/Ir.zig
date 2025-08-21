@@ -12,7 +12,8 @@ pub const Declaration = union(DeclarationType) {
         type: DataType,
     },
     global_dec: struct {
-        data: []const u8,
+        name: []const u8,
+        data: ?[]const u8,
         address: usize,
     },
 };
@@ -24,6 +25,7 @@ pub const OpType = enum {
     jump,
     jump_if_false,
     assign,
+    index,
     call,
     prefix_neg,
     infix_or,
@@ -50,6 +52,7 @@ pub const Op = union(OpType) {
     jump: []const u8,
     jump_if_false: struct { label: []const u8, arg: Arg },
     assign: struct { offset: usize, arg: Arg },
+    index: struct { offset: usize, offsetOf: usize, arg: Arg },
     call: struct { name: []const u8, args: []const Arg },
     prefix_neg: struct { offset: usize, arg: Arg },
     infix_or: struct { offset: usize, lhs: Arg, rhs: Arg },
@@ -129,6 +132,17 @@ pub fn calcGlobalOffset(self: *@This()) usize {
         };
     }
     return sum;
+}
+
+pub fn getStackSize(self: *@This()) usize {
+    var size: usize = 0;
+    for (self.variables.items) |variable| {
+        size += switch (variable) {
+            .var_dec => |value| getVariableSize(value.type),
+            .global_dec => 0,
+        };
+    }
+    return size;
 }
 
 pub fn getVariableSize(value: DataType) usize {

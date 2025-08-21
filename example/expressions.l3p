@@ -1,8 +1,9 @@
 Program Main 
-var x : numeric
+var x, y : numeric
+var arr : array[10] of numeric
 begin
-    x:=  2 - (( 2 - 10 ) * 5) 
-    printf('Var a: %d\n', x)
+    x := 6
+    y := 2
+    printf('%d\n', x * y)
 end
-
 

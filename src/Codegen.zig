@@ -9,6 +9,10 @@ pub fn init(allocator: std.mem.Allocator) @This() {
     };
 }
 
+pub fn write(w: anytype, comptime code: []const u8, args: anytype) !void {
+    try w.print(code ++ "\n", args);
+}
+
 fn loadReg(w: anytype, reg: []const u8, arg: Ir.Arg) !void {
     switch (arg) {
         .variable => |address| try w.print("  mov {s}, QWORD [rbp - {d}] \n", .{ reg, address }),
@@ -19,10 +23,6 @@ fn loadReg(w: anytype, reg: []const u8, arg: Ir.Arg) !void {
             try w.print(" mov {s}, [{s}]\n", .{ reg, reg });
         },
     }
-}
-
-pub fn write(w: anytype, comptime code: []const u8, args: anytype) !void {
-    try w.print(code ++ "\n", args);
 }
 
 pub fn build(self: @This(), ir: *Ir) !void {
@@ -43,17 +43,12 @@ pub fn build(self: @This(), ir: *Ir) !void {
             \\   extrn printf
         , .{});
 
+        const stackSize = ir.getStackSize();
+
         // allocate stack
-        for (ir.variables.items) |variable| {
-            switch (variable) {
-                .var_dec => |value| {
-                    const size: usize = Ir.getVariableSize(value.type);
-                    // try w.print("  ;stack allocation\n", .{});
-                    try w.print("  sub rsp, {d}    \n", .{size});
-                },
-                .global_dec => {},
-            }
-        }
+        try write(w,
+            \\  sub rsp, {d}
+        , .{stackSize});
 
         // TODO
         // RAX, RBX, RCX, RDX, RSI, RDI, RBP, RSP, sono 64bit
@@ -77,19 +72,10 @@ pub fn build(self: @This(), ir: *Ir) !void {
                 },
                 .assign => |assign| {
                     const target = assign.offset;
-
-                    switch (assign.arg) {
-                        .variable => |arg_offset| {
-                            try w.print("  mov rax, QWORD [rbp - {d}] \n", .{arg_offset});
-                            try w.print("  mov QWORD [rbp - {d}], rax \n", .{target});
-                        },
-                        .integerLiteral => |value| {
-                            try w.print("  mov QWORD [rbp - {d}], {d} \n", .{ target, value });
-                        },
-                        .dataLiteral => |_| @panic("Impossibile assgnare un data literal, ad esempio una stringa, ad una variabile"),
-                        .deref => |_| @panic("Impossibile assgnare un data literal, ad esempio una stringa, ad una variabile"),
-                    }
+                    try loadReg(w, "  rax", assign.arg);
+                    try w.print("  mov QWORD [rbp - {d}], rax \n", .{target});
                 },
+                .index => |_| {},
                 .call => |call| {
                     // try w.print("  ;function call\n", .{});
                     const fnName = call.name;
@@ -296,16 +282,10 @@ pub fn build(self: @This(), ir: *Ir) !void {
         }
 
         // deallocate stack
-        for (ir.variables.items) |variable| {
-            switch (variable) {
-                .var_dec => |value| {
-                    const size: usize = Ir.getVariableSize(value.type);
-                    // try w.print("  ;stack deallocation\n", .{});
-                    try w.print("  add rsp, {d}    \n", .{size});
-                },
-                .global_dec => {},
-            }
-        }
+        try write(w,
+            \\  add rsp, {d}
+        , .{stackSize});
+
         // restore stack
         try write(w,
             \\  pop rbp
@@ -320,17 +300,19 @@ pub fn build(self: @This(), ir: *Ir) !void {
             switch (variable) {
                 .var_dec => {},
                 .global_dec => |global| {
-                    try w.print("   data{d}: db ", .{global.address});
-                    for (global.data, 0..) |char, i| {
-                        try w.print("0x{X}", .{char});
-                        if (i < global.data.len - 1) {
-                            try w.print(", ", .{});
-                        } else {
-                            try w.print(", ", .{});
+                    if (global.data != null) {
+                        try w.print("   data{d}: db ", .{global.address});
+                        for (global.data.?, 0..) |char, i| {
+                            try w.print("0x{X}", .{char});
+                            if (i < global.data.?.len - 1) {
+                                try w.print(", ", .{});
+                            } else {
+                                try w.print(", ", .{});
+                            }
                         }
+                        try w.print("0x00", .{});
+                        try w.print("\n", .{});
                     }
-                    try w.print("0x00", .{});
-                    try w.print("\n", .{});
                 },
             }
         }
