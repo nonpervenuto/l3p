@@ -1,6 +1,7 @@
 const std = @import("std");
 const upperString = std.ascii.upperString;
 const eql = std.mem.eql;
+const isDigit = std.ascii.isDigit;
 
 pub const keywords = [_][]const u8{
     "PROGRAM",
@@ -130,7 +131,6 @@ pub const Token = struct {
 
     pub fn asString(self: Token, allocator: std.mem.Allocator) ![]const u8 {
         if (self.token[0] == '\'' and self.token[self.token.len - 1] == '\'') {
-            // Escape string
             const no_sigle_quote = self.token[1 .. self.token.len - 1];
             const double_quoted = try std.fmt.allocPrint(allocator, "\"{s}\"", .{no_sigle_quote});
             defer allocator.free(double_quoted);
@@ -172,6 +172,10 @@ pub fn peek(self: *@This()) ?Token {
     self.token_start = savepoint[1];
     self.token_end = savepoint[2];
     return next_token;
+}
+
+fn isDigitBase(char: u8) bool {
+    return char == 'b' or char == 'o' or char == 'x';
 }
 
 pub fn next(self: *@This()) ?Token {
@@ -334,8 +338,15 @@ pub fn next(self: *@This()) ?Token {
             },
             '0'...'9' => {
                 self.token_end = self.token_start + 1;
-                while (self.token_end < eof and std.ascii.isDigit(self.buffer[self.token_end])) {
+                if (isDigitBase(self.buffer[self.token_end])) {
                     self.token_end += 1;
+                    while (self.token_end < eof and isDigit(self.buffer[self.token_end])) {
+                        self.token_end += 1;
+                    }
+                } else {
+                    while (self.token_end < eof and isDigit(self.buffer[self.token_end])) {
+                        self.token_end += 1;
+                    }
                 }
                 kind = TokenKind.IntegerLiteral;
             },

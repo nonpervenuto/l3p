@@ -6,9 +6,6 @@ const TokenKind = Lexer.TokenKind;
 
 pub const CompileError = error{
     OutOfMemory,
-    Overflow,
-    DivisionByZero,
-    InvalidCharacter,
     InvalidLiteral,
     UnexpectedToken,
     UnexpectedEOF,
@@ -127,13 +124,16 @@ pub fn parsePrimary(self: *@This(), lexer: *Lexer) CompileError!Ir.Arg {
     const arg: Ir.Arg = switch (token.kind) {
         .Identifier => arg: {
             const declaration = self.ir.findVariable(token.token) orelse {
-                try self.printError(token, "Variable '{s}' not defined \n", .{token.token});
+                try self.printError(token, "Variable '{s}' is not defined.\n", .{token.token});
                 return error.UnexpectedToken;
             };
             break :arg Ir.Arg{ .variable = declaration.var_dec.offset };
         },
         .IntegerLiteral => arg: {
-            const value = try token.asInteger();
+            const value = token.asInteger() catch {
+                try self.printError(token, "Invalid number literal '{s}'.\n", .{token.token});
+                return error.UnexpectedToken;
+            };
             break :arg Ir.Arg{ .integerLiteral = value };
         },
         .StringLiteral => arg: {
@@ -212,7 +212,7 @@ pub fn compileExpressionRecursive(self: *@This(), lexer: *Lexer, arg: Ir.Arg, pr
             .Divide => blk: {
                 if (rhs.integerLiteral == 0) {
                     try self.printError(lookahead, "Division by zero detected!\n", .{});
-                    return error.DivisionByZero;
+                    return error.UnexpectedToken;
                 }
                 break :blk .{ .infix_divide = .{ .offset = address, .lhs = lhs, .rhs = rhs } };
             },
@@ -377,7 +377,7 @@ pub fn printError(self: *@This(), token: ?Token, comptime fmt: []const u8, args:
         self.std_err.print("Unexpected 'end of file'\nMake sure to balance every 'BEGIN' with and 'END'\n", .{}) catch return error.PrintDiagnosticError;
         return error.UnexpectedToken;
     };
-    self.std_err.print("{s}:{d}:{d} : " ++ "\x1b[31m" ++ "L3P Compilation Error\n" ++ "\x1b[0m", .{
+    self.std_err.print("{s}:{d}:{d} : " ++ "\x1b[31m" ++ "L3P Compilation Error " ++ "\x1b[0m", .{
         t.file_name,
         t.lineNumber,
         t.token_start,

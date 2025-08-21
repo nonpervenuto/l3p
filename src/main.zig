@@ -28,8 +28,9 @@ pub fn main() !void {
         defer allocator.free(buffer);
 
         var compiler = Compiler.init(allocator);
-        const ir: Ir = compiler.compile(path, buffer) catch {
-            return;
+        const ir = compiler.compile(path, buffer) catch |err| switch (err) {
+            error.UnexpectedToken, error.UnexpectedEOF => return,
+            else => return err,
         };
         var builder = Codegen.init(allocator);
         try builder.build(ir);

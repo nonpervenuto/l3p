@@ -20,6 +20,10 @@ fn loadReg(w: anytype, reg: []const u8, arg: Ir.Arg) !void {
     }
 }
 
+pub fn write(w: anytype, comptime code: []const u8, args: anytype) !void {
+    try w.print(code ++ "\n", args);
+}
+
 pub fn build(self: @This(), ir: Ir) !void {
     const file = try std.fs.cwd().createFile("output.asm", .{ .truncate = true });
     errdefer file.close();
@@ -27,16 +31,16 @@ pub fn build(self: @This(), ir: Ir) !void {
     var w = buf.writer();
 
     {
-        try w.print("format ELF64\n", .{});
-        try w.print("section \".text\" executable align 8 \n", .{});
-        try w.print("public main\n", .{});
-        try w.print("main:\n", .{});
-
-        try w.print("  push rbp\n", .{});
-        try w.print("  mov rbp, rsp \n", .{});
-        // try w.print("  ;external funciton definition\n", .{});
-        try w.print("  extrn putchar\n", .{});
-        try w.print("  extrn printf\n", .{});
+        try write(w,
+            \\ format ELF64
+            \\ section ".text" executable align 8
+            \\ public main 
+            \\ main: 
+            \\   push rbp
+            \\   mov rbp, rsp
+            \\   extrn putchar
+            \\   extrn printf
+        , .{});
 
         // allocate stack
         for (ir.variables.items) |variable| {
@@ -302,11 +306,12 @@ pub fn build(self: @This(), ir: Ir) !void {
             }
         }
         // restore stack
-        try w.print("  pop rbp\n", .{});
-
-        // try w.print("  ;return status code\n", .{});
-        try w.print("  mov rax, 0\n", .{});
-        try w.print("  ret\n", .{});
+        try write(w,
+            \\  pop rbp
+            \\  mov rax, 0
+            \\  ret
+            \\ 
+        , .{});
 
         // data section
         try w.print("section \".data\"\n", .{});
