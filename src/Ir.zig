@@ -1,7 +1,7 @@
 const std = @import("std");
 
-pub const ArgType = enum { variable, integerLiteral, dataLiteral };
-pub const Arg = union(ArgType) { variable: usize, integerLiteral: i32, dataLiteral: usize };
+pub const ArgType = enum { variable, integerLiteral, dataLiteral, deref };
+pub const Arg = union(ArgType) { variable: usize, integerLiteral: i32, dataLiteral: usize, deref: usize };
 
 pub const DataType = enum { numeric };
 pub const DeclarationType = enum { var_dec, global_dec };

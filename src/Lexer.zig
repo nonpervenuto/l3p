@@ -20,6 +20,8 @@ pub const keywords = [_][]const u8{
     "AND",
     "OR",
     "NOT",
+    "ARRAY",
+    "OF",
 };
 
 pub const keywords_map = [_]TokenKind{
@@ -39,6 +41,8 @@ pub const keywords_map = [_]TokenKind{
     .And,
     .Or,
     .Not,
+    .Array,
+    .Of,
 };
 
 pub const TokenKind = enum {
@@ -48,6 +52,8 @@ pub const TokenKind = enum {
     Var,
     Numeric,
     Real,
+    Array,
+    Of,
     Begin,
     While,
     Do,
@@ -64,6 +70,8 @@ pub const TokenKind = enum {
     // Symbols
     OpenParent,
     CloseParent,
+    OpenSquare,
+    CloseSquare,
     Comment,
     Comma,
     Equal,
@@ -142,6 +150,11 @@ pub const Token = struct {
 
     pub fn asInteger(self: Token) !i32 {
         return try std.fmt.parseInt(i32, self.token, 0);
+    }
+
+    pub fn asUsize(self: Token) usize {
+        const int = self.asInteger() catch 0;
+        return @as(usize, @intCast(int));
     }
 
     pub fn asFloat(self: Token) !f32 {
@@ -311,6 +324,14 @@ pub fn next(self: *@This()) ?Token {
             ')' => {
                 self.token_end = self.token_start + 1;
                 kind = TokenKind.CloseParent;
+            },
+            '[' => {
+                self.token_end = self.token_start + 1;
+                kind = TokenKind.OpenSquare;
+            },
+            ']' => {
+                self.token_end = self.token_start + 1;
+                kind = TokenKind.CloseSquare;
             },
             ';' => {
                 self.token_end = self.token_start + 1;

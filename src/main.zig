@@ -28,11 +28,10 @@ pub fn main() !void {
         defer allocator.free(buffer);
 
         var compiler = Compiler.init(allocator);
-        const ir = compiler.compile(path, buffer) catch |err| switch (err) {
-            error.UnexpectedToken, error.UnexpectedEOF => return,
+        var ir = compiler.compile(path, buffer) catch |err| switch (err) {
             else => return err,
         };
         var builder = Codegen.init(allocator);
-        try builder.build(ir);
+        try builder.build(&ir);
     }
 }

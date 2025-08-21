@@ -13,9 +13,10 @@ fn loadReg(w: anytype, reg: []const u8, arg: Ir.Arg) !void {
     switch (arg) {
         .variable => |address| try w.print("  mov {s}, QWORD [rbp - {d}] \n", .{ reg, address }),
         .integerLiteral => |value| try w.print("  mov {s}, QWORD {d} \n", .{ reg, value }),
-        .dataLiteral => |_| {
-            // TODO gestire il caso
-            @panic("Impossibile assgnare un data literal, ad esempio una stringa, ad una variabile");
+        .dataLiteral => |value| try w.print("  mov {s}, data{d}+0 \n", .{ reg, value }),
+        .deref => |address| {
+            try w.print(" mov {s}, [rbp - {d}]\n", .{ reg, address });
+            try w.print(" mov {s}, [{s}]\n", .{ reg, reg });
         },
     }
 }
@@ -24,7 +25,7 @@ pub fn write(w: anytype, comptime code: []const u8, args: anytype) !void {
     try w.print(code ++ "\n", args);
 }
 
-pub fn build(self: @This(), ir: Ir) !void {
+pub fn build(self: @This(), ir: *Ir) !void {
     const file = try std.fs.cwd().createFile("output.asm", .{ .truncate = true });
     errdefer file.close();
     var buf = std.io.bufferedWriter(file.deprecatedWriter());
@@ -79,18 +80,14 @@ pub fn build(self: @This(), ir: Ir) !void {
 
                     switch (assign.arg) {
                         .variable => |arg_offset| {
-                            // try w.print("  ;assign stack var to another stack var\n", .{});
                             try w.print("  mov rax, QWORD [rbp - {d}] \n", .{arg_offset});
                             try w.print("  mov QWORD [rbp - {d}], rax \n", .{target});
                         },
                         .integerLiteral => |value| {
-                            // try w.print("  ;assign literal to stack var\n", .{});
                             try w.print("  mov QWORD [rbp - {d}], {d} \n", .{ target, value });
                         },
-                        .dataLiteral => |_| {
-                            // TODO gestire il caso
-                            @panic("Impossibile assgnare un data literal, ad esempio una stringa, ad una variabile");
-                        },
+                        .dataLiteral => |_| @panic("Impossibile assgnare un data literal, ad esempio una stringa, ad una variabile"),
+                        .deref => |_| @panic("Impossibile assgnare un data literal, ad esempio una stringa, ad una variabile"),
                     }
                 },
                 .call => |call| {
@@ -104,6 +101,7 @@ pub fn build(self: @This(), ir: Ir) !void {
                                 .variable => |offset| try w.print("  mov {s}, [rbp - {d}] \n", .{ reg, offset }),
                                 .integerLiteral => |value| try w.print("  mov {s}, {d} \n", .{ reg, value }),
                                 .dataLiteral => |value| try w.print("  mov {s}, data{d}+0 \n", .{ reg, value }),
+                                .deref => |_| @panic("Impossibile assgnare un data literal, ad esempio una stringa, ad una variabile"),
                             }
                         }
                         // TODO azzera il registo AL, serve per chiamara printf, non so se serve per tutte le funzioni extrn
@@ -124,7 +122,8 @@ pub fn build(self: @This(), ir: Ir) !void {
                     switch (infix.rhs) {
                         .variable => |rhs_offset| try w.print("  or rax, [rbp - {d}]\n", .{rhs_offset}),
                         .integerLiteral => |rhs_value| try w.print("  or rax, {d} \n", .{rhs_value}),
-                        else => {},
+                        .dataLiteral => |_| @panic("Impossibile assgnare un data literal, ad esempio una stringa, ad una variabile"),
+                        .deref => |_| @panic("Impossibile assgnare un data literal, ad esempio una stringa, ad una variabile"),
                     }
                     try w.print("  mov [rbp - {d}], rax\n", .{target_offset});
                 },
@@ -134,7 +133,8 @@ pub fn build(self: @This(), ir: Ir) !void {
                     switch (infix.rhs) {
                         .variable => |rhs_offset| try w.print("  and rax, [rbp - {d}]\n", .{rhs_offset}),
                         .integerLiteral => |rhs_value| try w.print("  and rax, {d} \n", .{rhs_value}),
-                        else => {},
+                        .dataLiteral => |_| @panic("Impossibile assgnare un data literal, ad esempio una stringa, ad una variabile"),
+                        .deref => |_| @panic("Impossibile assgnare un data literal, ad esempio una stringa, ad una variabile"),
                     }
                     try w.print("  mov [rbp - {d}], rax\n", .{target_offset});
                 },
@@ -144,7 +144,8 @@ pub fn build(self: @This(), ir: Ir) !void {
                     switch (infix.rhs) {
                         .variable => |rhs_offset| try w.print("  or rax, [rbp - {d}]\n", .{rhs_offset}),
                         .integerLiteral => |rhs_value| try w.print("  or rax, {d} \n", .{rhs_value}),
-                        else => {},
+                        .dataLiteral => |_| @panic("Impossibile assgnare un data literal, ad esempio una stringa, ad una variabile"),
+                        .deref => |_| @panic("Impossibile assgnare un data literal, ad esempio una stringa, ad una variabile"),
                     }
                     try w.print("  mov [rbp - {d}], rax\n", .{target_offset});
                 },
@@ -154,7 +155,7 @@ pub fn build(self: @This(), ir: Ir) !void {
                     switch (infix.rhs) {
                         .variable => |rhs_offset| try w.print("  xor rax, [rbp - {d}]\n", .{rhs_offset}),
                         .integerLiteral => |rhs_value| try w.print("  xor rax, {d} \n", .{rhs_value}),
-                        else => {},
+                        else => @panic("Not implemented"),
                     }
                     try w.print("  mov [rbp - {d}], rax\n", .{target_offset});
                 },
@@ -164,7 +165,7 @@ pub fn build(self: @This(), ir: Ir) !void {
                     switch (infix.rhs) {
                         .variable => |rhs_offset| try w.print("  and rax, [rbp - {d}]\n", .{rhs_offset}),
                         .integerLiteral => |rhs_value| try w.print("  and rax, {d} \n", .{rhs_value}),
-                        else => {},
+                        else => @panic("Not implemented"),
                     }
                     try w.print("  mov [rbp - {d}], rax\n", .{target_offset});
                 },
@@ -222,7 +223,7 @@ pub fn build(self: @This(), ir: Ir) !void {
                     switch (infix.rhs) {
                         .variable => |rhs_offset| try w.print("  shl rax, [rbp - {d}] \n", .{rhs_offset}),
                         .integerLiteral => |rhs_value| try w.print("  shl rax, {d} \n", .{rhs_value}),
-                        else => {},
+                        else => @panic("Not implemented"),
                     }
                     try w.print("  mov [rbp - {d}], rax\n", .{target_offset});
                 },
@@ -232,7 +233,7 @@ pub fn build(self: @This(), ir: Ir) !void {
                     switch (infix.rhs) {
                         .variable => |rhs_offset| try w.print("  shr rax, [rbp - {d}] \n", .{rhs_offset}),
                         .integerLiteral => |rhs_value| try w.print("  shr rax, {d} \n", .{rhs_value}),
-                        else => {},
+                        else => @panic("Not implemented"),
                     }
                     try w.print("  mov [rbp - {d}], rax\n", .{target_offset});
                 },
@@ -242,7 +243,7 @@ pub fn build(self: @This(), ir: Ir) !void {
                     switch (infix_plus.rhs) {
                         .variable => |rhs_offset| try w.print("  add rax, [rbp - {d}] \n", .{rhs_offset}),
                         .integerLiteral => |rhs_value| try w.print("  add rax, {d} \n", .{rhs_value}),
-                        else => {},
+                        else => @panic("Not implemented"),
                     }
                     try w.print("  mov [rbp - {d}], rax\n", .{target_offset});
                 },
@@ -252,7 +253,7 @@ pub fn build(self: @This(), ir: Ir) !void {
                     switch (infix.rhs) {
                         .variable => |rhs_offset| try w.print("  sub rax, QWORD [rbp - {d}] \n", .{rhs_offset}),
                         .integerLiteral => |rhs_value| try w.print("  sub QWORD rax, {d} \n", .{rhs_value}),
-                        else => {},
+                        else => @panic("Not implemented"),
                     }
                     try w.print("  mov QWORD [rbp - {d}], rax\n", .{target_offset});
                 },
@@ -262,7 +263,7 @@ pub fn build(self: @This(), ir: Ir) !void {
                     switch (infix.rhs) {
                         .variable => |rhs_offset| try w.print("  imul rax, [rbp - {d}] \n", .{rhs_offset}),
                         .integerLiteral => |rhs_value| try w.print("  imul rax, {d} \n", .{rhs_value}),
-                        else => {},
+                        else => @panic("Not implemented"),
                     }
                     try w.print("  mov [rbp - {d}], rax\n", .{target_offset});
                 },
@@ -273,7 +274,7 @@ pub fn build(self: @This(), ir: Ir) !void {
                     switch (infix.rhs) {
                         .variable => |rhs_offset| try w.print("  mov rbx, [rbp - {d}]\n", .{rhs_offset}),
                         .integerLiteral => |rhs_value| try w.print("  mov rbx, {d} \n", .{rhs_value}),
-                        else => {},
+                        else => @panic("Not implemented"),
                     }
                     try w.print("  div rbx\n", .{});
                     try w.print("  mov [rbp - {d}], rax\n", .{target_offset});
@@ -286,7 +287,7 @@ pub fn build(self: @This(), ir: Ir) !void {
                     switch (infix.rhs) {
                         .variable => |rhs_offset| try w.print("  mov rbx, [rbp - {d}]\n", .{rhs_offset}),
                         .integerLiteral => |rhs_value| try w.print("  mov rbx, {d} \n", .{rhs_value}),
-                        else => {},
+                        else => @panic("Not implemented"),
                     }
                     try w.print("  div rbx\n", .{});
                     try w.print("  mov QWORD [rbp - {d}], rdx\n", .{target_offset});
