@@ -32,6 +32,7 @@ pub fn main() !void {
             else => return err,
         };
         var builder = Codegen.init(allocator);
-        try builder.build(&ir);
+
+        try builder.build(path, &ir);
     }
 }

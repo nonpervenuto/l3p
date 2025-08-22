@@ -25,8 +25,21 @@ fn loadReg(w: anytype, reg: []const u8, arg: Ir.Arg) !void {
     }
 }
 
-pub fn build(self: @This(), ir: *Ir) !void {
-    const file = try std.fs.cwd().createFile("output.asm", .{ .truncate = true });
+fn getFileName(self: @This(), path: []const u8, ext: ?[]const u8) ![]const u8 {
+    var file_name = std.fs.path.basename(path);
+    const index = std.mem.lastIndexOfScalar(u8, file_name, '.') orelse 0;
+    file_name = if (index == 0) file_name else file_name[0..index];
+
+    if (ext) |e| {
+        return try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ file_name, e });
+    } else {
+        return try std.fmt.allocPrint(self.allocator, "{s}", .{file_name});
+    }
+}
+
+pub fn build(self: @This(), path: []const u8, ir: *Ir) !void {
+    const file_name_asm = try self.getFileName(path, "asm");
+    const file = try std.fs.cwd().createFile(file_name_asm, .{ .truncate = true });
     errdefer file.close();
 
     var stdout_buffer: [4096]u8 = undefined;
@@ -323,13 +336,16 @@ pub fn build(self: @This(), ir: *Ir) !void {
     file.close();
 
     {
-        var cmd = std.process.Child.init(&[_][]const u8{ "fasm", "output.asm" }, self.allocator);
+        const f = try self.getFileName(path, "asm");
+        var cmd = std.process.Child.init(&[_][]const u8{ "fasm", f }, self.allocator);
         try cmd.spawn();
         _ = try cmd.wait();
     }
 
     {
-        var cmd = std.process.Child.init(&[_][]const u8{ "gcc", "-no-pie", "-o", "output", "output.o" }, self.allocator);
+        const fe = try self.getFileName(path, null);
+        const f = try self.getFileName(path, "o");
+        var cmd = std.process.Child.init(&[_][]const u8{ "gcc", "-no-pie", "-o", fe, f }, self.allocator);
         try cmd.spawn();
         _ = try cmd.wait();
     }
