@@ -88,9 +88,10 @@ pub fn createLabel(self: *@This(), allocator: std.mem.Allocator, name: []const u
     return label;
 }
 
-pub fn createTempVar(self: *@This(), dataType: DataType) !usize {
+pub fn createTempVar(self: *@This(), allocator: std.mem.Allocator, dataType: DataType) !usize {
     const address = self.calcVarOffset(dataType);
     try self.variables.append(
+        allocator,
         Declaration{
             .var_dec = .{ .name = "", .offset = address, .type = dataType },
         },

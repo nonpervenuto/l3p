@@ -28,8 +28,10 @@ fn loadReg(w: anytype, reg: []const u8, arg: Ir.Arg) !void {
 pub fn build(self: @This(), ir: *Ir) !void {
     const file = try std.fs.cwd().createFile("output.asm", .{ .truncate = true });
     errdefer file.close();
-    var buf = std.io.bufferedWriter(file.deprecatedWriter());
-    var w = buf.writer();
+
+    var stdout_buffer: [4096]u8 = undefined;
+    var stdout_writer = file.writer(&stdout_buffer);
+    const w = &stdout_writer.interface;
 
     {
         try write(w,
@@ -317,7 +319,7 @@ pub fn build(self: @This(), ir: *Ir) !void {
             }
         }
     }
-    try buf.flush();
+    try w.flush();
     file.close();
 
     {

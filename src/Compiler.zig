@@ -22,8 +22,8 @@ pub fn init(allocator: std.mem.Allocator) @This() {
         .allocator = allocator,
         .std_err = std_err,
         .ir = .{
-            .variables = Ir.VariableList.init(allocator),
-            .operations = Ir.OperationList.init(allocator),
+            .variables = .empty,
+            .operations = .empty,
         },
     };
 }
@@ -33,13 +33,13 @@ pub fn compile(self: *@This(), path: []const u8, buffer: []const u8) !Ir {
     try self.getAndExpect(&lexer, .{ .Program, .Identifier, .EndOfLine });
 
     while (lexer.peek().?.kind == TokenKind.Var) {
-        var vars = std.ArrayList([]const u8).init(self.allocator);
+        var vars: std.ArrayList([]const u8) = .empty;
 
         // Parse variable name list
         try self.getAndExpect(&lexer, .{.Var});
         while (lexer.peek().?.kind != TokenKind.Colon) {
             const var_token = try self.getExpected(lexer.next(), .Identifier);
-            try vars.append(var_token.token);
+            try vars.append(self.allocator, var_token.token);
 
             if (lexer.peek().?.kind == TokenKind.Comma) {
                 try self.getAndExpect(&lexer, .{.Comma});
@@ -60,7 +60,7 @@ pub fn compile(self: *@This(), path: []const u8, buffer: []const u8) !Ir {
                     .offset = offset,
                     .type = Ir.DataType.numeric,
                 } };
-                self.ir.variables.append(variable) catch unreachable;
+                self.ir.variables.append(self.allocator, variable) catch unreachable;
             }
         } else if (kind == TokenKind.Array) {
             try self.getAndExpect(&lexer, .{.OpenSquare});
@@ -78,7 +78,7 @@ pub fn compile(self: *@This(), path: []const u8, buffer: []const u8) !Ir {
                         .data = null,
                     },
                 };
-                try self.ir.variables.append(variable);
+                try self.ir.variables.append(self.allocator, variable);
             }
         }
     }
@@ -166,7 +166,7 @@ pub fn parsePrimary(self: *@This(), lexer: *Lexer) CompileError!Ir.Arg {
                 .data = try token.asString(self.allocator),
                 .address = dataOffset,
             } };
-            try self.ir.variables.append(variable);
+            try self.ir.variables.append(self.allocator, variable);
             break :arg Ir.Arg{ .dataLiteral = dataOffset };
         },
         .OpenParent => arg: {
@@ -184,8 +184,8 @@ pub fn parsePrimary(self: *@This(), lexer: *Lexer) CompileError!Ir.Arg {
                     break :arg Ir.Arg{ .integerLiteral = -value };
                 },
                 else => {
-                    const address = try self.ir.createTempVar(Ir.DataType.numeric);
-                    try self.ir.operations.append(.{
+                    const address = try self.ir.createTempVar(self.allocator, Ir.DataType.numeric);
+                    try self.ir.operations.append(self.allocator, .{
                         .prefix_neg = .{ .offset = address, .arg = arg },
                     });
                     break :arg Ir.Arg{ .variable = address };
@@ -214,7 +214,7 @@ pub fn compileExpressionRecursive(self: *@This(), lexer: *Lexer, arg: Ir.Arg, pr
             lookahead = lexer.peek() orelse return error.UnexpectedEOF;
         }
 
-        const address = try self.ir.createTempVar(Ir.DataType.numeric);
+        const address = try self.ir.createTempVar(self.allocator, Ir.DataType.numeric);
 
         const op: Ir.Op = switch (kind) {
             .Or => .{ .infix_or = .{ .offset = address, .lhs = lhs, .rhs = rhs } },
@@ -243,7 +243,7 @@ pub fn compileExpressionRecursive(self: *@This(), lexer: *Lexer, arg: Ir.Arg, pr
             .Percent => .{ .infix_modulo = .{ .offset = address, .lhs = lhs, .rhs = rhs } },
             else => @panic("Not implemented"),
         };
-        try self.ir.operations.append(op);
+        try self.ir.operations.append(self.allocator, op);
 
         lhs = Ir.Arg{ .variable = address };
     }
@@ -262,41 +262,41 @@ pub fn parseBody(self: *@This(), lexer: *Lexer, close_body_tags: anytype) Compil
             const end_if = try self.ir.createLabel(self.allocator, "END_IF");
             var jump_forward = try self.ir.createLabel(self.allocator, "IF_COND_FALSE");
 
-            try self.ir.operations.append(Ir.Op{ .jump_if_false = .{ .label = jump_forward, .arg = arg } });
+            try self.ir.operations.append(self.allocator, Ir.Op{ .jump_if_false = .{ .label = jump_forward, .arg = arg } });
             try self.parseBody(lexer, .{ .Else, .ElseIf, .EndIf });
-            try self.ir.operations.append(Ir.Op{ .jump = end_if });
+            try self.ir.operations.append(self.allocator, Ir.Op{ .jump = end_if });
             var nextToken = lexer.peek() orelse return error.UnexpectedEOF;
 
             while (nextToken.kind == .ElseIf) {
                 try self.getAndExpect(lexer, .{.ElseIf});
-                try self.ir.operations.append(.{ .label = jump_forward });
+                try self.ir.operations.append(self.allocator, .{ .label = jump_forward });
                 jump_forward = try self.ir.createLabel(self.allocator, "ELSE_IF_COND_FALSE");
                 arg = try self.compileExpression(lexer);
 
                 // Consume Then
                 try self.getAndExpect(lexer, .{ .Then, .EndOfLine });
-                try self.ir.operations.append(Ir.Op{ .jump_if_false = .{ .label = jump_forward, .arg = arg } });
+                try self.ir.operations.append(self.allocator, Ir.Op{ .jump_if_false = .{ .label = jump_forward, .arg = arg } });
                 try self.parseBody(lexer, .{ .ElseIf, .Else, .EndIf });
-                try self.ir.operations.append(Ir.Op{ .jump = end_if });
+                try self.ir.operations.append(self.allocator, Ir.Op{ .jump = end_if });
 
                 nextToken = lexer.peek() orelse return error.UnexpectedEOF;
             }
 
             if (nextToken.kind == .Else) {
                 try self.getAndExpect(lexer, .{ .Else, .EndOfLine });
-                try self.ir.operations.append(.{ .label = jump_forward });
+                try self.ir.operations.append(self.allocator, .{ .label = jump_forward });
                 try self.parseBody(lexer, .{.EndIf});
             } else {
-                try self.ir.operations.append(.{ .label = jump_forward });
+                try self.ir.operations.append(self.allocator, .{ .label = jump_forward });
             }
             try self.getAndExpect(lexer, .{ .EndIf, .EndOfLine });
-            try self.ir.operations.append(.{ .label = end_if });
+            try self.ir.operations.append(self.allocator, .{ .label = end_if });
         } else if (peek.kind == TokenKind.While) {
             try self.getAndExpect(lexer, .{.While});
 
             // Create label before while expression
             const while_loop = try self.ir.createLabel(self.allocator, "WHILE");
-            try self.ir.operations.append(.{ .label = while_loop });
+            try self.ir.operations.append(self.allocator, .{ .label = while_loop });
 
             // while boolean expression
             const arg = try self.compileExpression(lexer);
@@ -304,16 +304,16 @@ pub fn parseBody(self: *@This(), lexer: *Lexer, close_body_tags: anytype) Compil
             // Jump to label after while
             const while_end = try self.ir.createLabel(self.allocator, "END_WHILE");
             const jump_if = Ir.Op{ .jump_if_false = .{ .label = while_end, .arg = arg } };
-            try self.ir.operations.append(jump_if);
+            try self.ir.operations.append(self.allocator, jump_if);
 
             try self.getAndExpect(lexer, .{ .Do, .EndOfLine });
             try self.parseBody(lexer, .{.EndWhile});
             try self.getAndExpect(lexer, .{ .EndWhile, .EndOfLine });
 
             // Jump to start of while
-            try self.ir.operations.append(.{ .jump = while_loop });
+            try self.ir.operations.append(self.allocator, .{ .jump = while_loop });
             // Create label after while
-            try self.ir.operations.append(.{ .label = while_end });
+            try self.ir.operations.append(self.allocator, .{ .label = while_end });
         } else if (peek.kind == TokenKind.Identifier) {
             const id = lexer.next().?.token;
             const peek_token = lexer.peek().?;
@@ -330,7 +330,7 @@ pub fn parseBody(self: *@This(), lexer: *Lexer, close_body_tags: anytype) Compil
                 const arg = try self.compileExpression(lexer);
 
                 try self.getAndExpect(lexer, .{.EndOfLine});
-                try self.ir.operations.append(.{
+                try self.ir.operations.append(self.allocator, .{
                     .assign = .{
                         .offset = declaration.var_dec.offset,
                         .arg = arg,
@@ -338,12 +338,12 @@ pub fn parseBody(self: *@This(), lexer: *Lexer, close_body_tags: anytype) Compil
                 });
             } else if (peek_token.kind == TokenKind.OpenParent) {
                 try self.getAndExpect(lexer, .{.OpenParent});
-
-                var args = std.ArrayList(Ir.Arg).init(self.allocator);
+                const ArgList = std.ArrayList(Ir.Arg);
+                var args: ArgList = .empty;
 
                 while (lexer.peek().?.kind != TokenKind.CloseParent) {
                     const arg = try self.compileExpression(lexer);
-                    try args.append(arg);
+                    try args.append(self.allocator, arg);
 
                     if (lexer.peek().?.kind == TokenKind.Comma) {
                         _ = lexer.next();
@@ -351,9 +351,9 @@ pub fn parseBody(self: *@This(), lexer: *Lexer, close_body_tags: anytype) Compil
                 }
                 try self.getAndExpect(lexer, .{ .CloseParent, .EndOfLine });
 
-                try self.ir.operations.append(.{ .call = .{
+                try self.ir.operations.append(self.allocator, .{ .call = .{
                     .name = id,
-                    .args = try args.toOwnedSlice(),
+                    .args = try args.toOwnedSlice(self.allocator),
                 } });
             }
         } else {
