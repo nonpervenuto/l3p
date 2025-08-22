@@ -379,27 +379,26 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
     try w.flush();
     file.close();
 
-    const exe_name = try self.getFileName(path, null);
     {
         const f = try self.getFileName(path, "asm");
+        std.log.info("Creating: {s}", .{f});
         var cmd = std.process.Child.init(&[_][]const u8{ "fasm", f }, self.allocator);
-        var std_err = self.std_err_writer.interface;
-        try std_err.print("aseo-1\n", .{});
-        try std_err.print("aseo-2\n", .{});
-        try std_err.print("aseo-3\n", .{});
 
-        try std_err.flush();
-        cmd.spawn() catch {
-            return CodegenError.FasmError;
+        try cmd.spawn();
+        _ = cmd.wait() catch |e| {
+            std.log.err("Error running fasm: {t}", .{e});
         };
-        _ = try cmd.wait();
     }
 
     {
+        const exe_name = try self.getFileName(path, null);
+        std.log.info("Creating: {s}", .{exe_name});
         const f = try self.getFileName(path, "o");
         var cmd = std.process.Child.init(&[_][]const u8{ "gcc", "-no-pie", "-o", exe_name, f }, self.allocator);
         try cmd.spawn();
-        _ = try cmd.wait();
+        _ = cmd.wait() catch |e| {
+            std.log.err("Error running gcc: {t}", .{e});
+        };
+        return exe_name;
     }
-    return exe_name;
 }
