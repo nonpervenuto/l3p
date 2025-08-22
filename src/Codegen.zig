@@ -2,10 +2,19 @@ const std = @import("std");
 const Ir = @import("Ir.zig");
 
 allocator: std.mem.Allocator,
+std_err_writer: std.fs.File.Writer,
+
+pub const CodegenError = error{
+    FasmError,
+    GccError,
+    OutOfMemory,
+};
 
 pub fn init(allocator: std.mem.Allocator) @This() {
+    const buf = allocator.alloc(u8, 4096) catch unreachable;
     return @This(){
         .allocator = allocator,
+        .std_err_writer = std.fs.File.stderr().writer(buf),
     };
 }
 
@@ -37,7 +46,7 @@ fn getFileName(self: @This(), path: []const u8, ext: ?[]const u8) ![]const u8 {
     }
 }
 
-pub fn build(self: @This(), path: []const u8, ir: *Ir) !void {
+pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
     const file_name_asm = try self.getFileName(path, "asm");
     const file = try std.fs.cwd().createFile(file_name_asm, .{ .truncate = true });
     errdefer file.close();
@@ -370,18 +379,27 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) !void {
     try w.flush();
     file.close();
 
+    const exe_name = try self.getFileName(path, null);
     {
         const f = try self.getFileName(path, "asm");
         var cmd = std.process.Child.init(&[_][]const u8{ "fasm", f }, self.allocator);
-        try cmd.spawn();
+        var std_err = self.std_err_writer.interface;
+        try std_err.print("aseo-1\n", .{});
+        try std_err.print("aseo-2\n", .{});
+        try std_err.print("aseo-3\n", .{});
+
+        try std_err.flush();
+        cmd.spawn() catch {
+            return CodegenError.FasmError;
+        };
         _ = try cmd.wait();
     }
 
     {
-        const fe = try self.getFileName(path, null);
         const f = try self.getFileName(path, "o");
-        var cmd = std.process.Child.init(&[_][]const u8{ "gcc", "-no-pie", "-o", fe, f }, self.allocator);
+        var cmd = std.process.Child.init(&[_][]const u8{ "gcc", "-no-pie", "-o", exe_name, f }, self.allocator);
         try cmd.spawn();
         _ = try cmd.wait();
     }
+    return exe_name;
 }

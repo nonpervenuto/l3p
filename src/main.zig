@@ -33,6 +33,6 @@ pub fn main() !void {
         };
         var builder = Codegen.init(allocator);
 
-        try builder.build(path, &ir);
+        _ = try builder.build(path, &ir);
     }
 }
