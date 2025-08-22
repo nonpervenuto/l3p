@@ -121,19 +121,22 @@ pub const TokenKind = enum {
     }
 };
 
+pub const Loc = struct {
+    row: usize,
+    col: usize,
+};
+
 pub const Token = struct {
     file_name: []const u8,
     token: []const u8,
     kind: TokenKind,
-    lineNumber: usize,
     token_start: usize,
-    token_end: usize,
 
     pub fn format(self: Token, w: *std.Io.Writer) !void {
         if (self.kind == TokenKind.EndOfLine) {
-            try w.print("{d}:({d}-{d}) {}", .{ self.lineNumber, self.token_start, self.token_end, self.kind });
+            try w.print("{d}:{d} {}", .{ self.loc.row, self.loc.col, self.kind });
         } else {
-            try w.print("{d}:({d}-{d}) {} \"{s}\"", .{ self.lineNumber, self.token_start, self.token_end, self.kind, self.token });
+            try w.print("{d}:{d} {} \"{s}\"", .{ self.loc.row, self.loc.col, self.kind, self.token });
         }
     }
 
@@ -164,7 +167,6 @@ pub const Token = struct {
 
 file_name: []const u8,
 buffer: []const u8,
-lineNumber: usize,
 token_start: usize,
 token_end: usize,
 
@@ -172,18 +174,36 @@ pub fn init(file_name: []const u8, buffer: []const u8) @This() {
     return @This(){
         .file_name = file_name,
         .buffer = buffer,
-        .lineNumber = 0,
         .token_start = 0,
         .token_end = 0,
     };
 }
 
+pub fn getLoc(self: *@This(), token: Token) Loc {
+    var index: usize = 0;
+    const eof = self.buffer.len;
+
+    var row: usize = 1;
+    var col: usize = 1;
+
+    while (index < eof and index <= token.token_start) : (index += 1) {
+        switch (self.buffer[index]) {
+            '\n' => {
+                row += 1;
+                col = 1;
+            },
+            else => {},
+        }
+        col += 1;
+    }
+    return .{ .row = row, .col = col };
+}
+
 pub fn peek(self: *@This()) ?Token {
-    const savepoint = .{ self.lineNumber, self.token_start, self.token_end };
+    const savepoint = .{ self.token_start, self.token_end };
     const next_token = self.next();
-    self.lineNumber = savepoint[0];
-    self.token_start = savepoint[1];
-    self.token_end = savepoint[2];
+    self.token_start = savepoint[0];
+    self.token_end = savepoint[1];
     return next_token;
 }
 
@@ -205,7 +225,6 @@ pub fn next(self: *@This()) ?Token {
             '\n' => {
                 self.token_end = self.token_start;
                 while (self.token_end < eof and (self.buffer[self.token_end]) == '\n') {
-                    self.lineNumber += 1;
                     self.token_end += 1;
                 }
 
@@ -389,11 +408,8 @@ pub fn next(self: *@This()) ?Token {
             .file_name = self.file_name,
             .token = token,
             .kind = kind,
-            .lineNumber = self.lineNumber,
             .token_start = self.token_start,
-            .token_end = self.token_end,
         };
-
         self.token_start = self.token_end;
         return plex;
     }
