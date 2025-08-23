@@ -88,7 +88,7 @@ pub const TokenKind = enum {
     Ampersand,
     Pipe,
     Colon,
-    ColonEqual,
+    Assign,
     ExclamationEqual,
     SemiColon,
     Less,
@@ -312,7 +312,7 @@ pub fn next(self: *@This()) ?Token {
                 self.token_end = self.token_start + 1;
                 kind = TokenKind.Colon;
                 if (self.token_end < eof and self.buffer[self.token_end] == '=') {
-                    kind = TokenKind.ColonEqual;
+                    kind = TokenKind.Assign;
                     self.token_end += 1;
                 }
             },

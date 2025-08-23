@@ -92,6 +92,7 @@ pub fn compile(self: *@This(), path: []const u8, buffer: []const u8) !Ir {
 
 fn isOperator(k: TokenKind) bool {
     return switch (k) {
+        .Assign,
         .Or,
         .And,
         .Pipe,
@@ -120,6 +121,7 @@ fn isOperator(k: TokenKind) bool {
 // the greater the number, the more precedence it has and must be executed first
 fn getPrecedence(k: TokenKind) usize {
     return switch (k) {
+        .Assign => 0,
         // TODO Operatore virgola
         // TODO = <<= >>=
         .Or => 1, // OR logico
@@ -133,7 +135,7 @@ fn getPrecedence(k: TokenKind) usize {
         .Plus, .Minus => 9, // Addizione, sottrazione
         .Multiply, .Divide, .Percent => 10, // Moltiplicazione, divisione, modulo
         .Not => 11, // Operatori unari, sizeof, cast di tipo
-        else => 0,
+        else => @panic("Unexpected Token"),
     };
 }
 
@@ -145,12 +147,39 @@ pub fn compileExpression(self: *@This(), lexer: *Lexer) CompileError!Ir.Arg {
 pub fn parsePrimary(self: *@This(), lexer: *Lexer) CompileError!Ir.Arg {
     const token = lexer.next().?;
     const arg: Ir.Arg = switch (token.kind) {
+        // Var or Function call
         .Identifier => arg: {
-            const declaration = self.ir.findVariable(token.token) orelse {
-                try diagnostic(lexer, token, "Variable '{s}' is not defined.\n", .{token.token});
-                return error.UnexpectedToken;
-            };
-            break :arg Ir.Arg{ .variable = declaration.var_dec.offset };
+            const isPeekOpenParent = if (lexer.peek()) |peek| peek.kind == TokenKind.OpenParent else false;
+            if (isPeekOpenParent) {
+                try fetchExpectMany(lexer, .{.OpenParent});
+                const ArgList = std.ArrayList(Ir.Arg);
+                var args: ArgList = .empty;
+
+                while (lexer.peek().?.kind != TokenKind.CloseParent) {
+                    const arg = try self.compileExpression(lexer);
+                    try args.append(self.allocator, arg);
+
+                    if (lexer.peek().?.kind == TokenKind.Comma) {
+                        _ = lexer.next();
+                    }
+                }
+                try fetchExpectMany(lexer, .{.CloseParent});
+
+                // The result of the function is stored in a temporary variable
+                const address = try self.ir.createTempVar(self.allocator, Ir.DataType.numeric);
+                try self.ir.operations.append(self.allocator, .{ .call = .{
+                    .name = token.token,
+                    .args = try args.toOwnedSlice(self.allocator),
+                } });
+
+                break :arg Ir.Arg{ .variable = address };
+            } else {
+                const variable = self.ir.findVariable(token.token) orelse {
+                    try diagnostic(lexer, token, "Variable '{s}' is not defined.\n", .{token.token});
+                    return error.UnexpectedToken;
+                };
+                break :arg Ir.Arg{ .variable = variable.var_dec.offset };
+            }
         },
         .IntegerLiteral => arg: {
             const value = token.asInteger() catch {
@@ -214,9 +243,11 @@ pub fn compileExpressionRecursive(self: *@This(), lexer: *Lexer, arg: Ir.Arg, pr
             lookahead = lexer.peek() orelse return error.UnexpectedEOF;
         }
 
+        // TODO if kind is assigment this temporary varialbe is not necessary
         const address = try self.ir.createTempVar(self.allocator, Ir.DataType.numeric);
 
         const op: Ir.Op = switch (kind) {
+            .Assign => .{ .assign = .{ .lhs = lhs, .rhs = rhs } },
             .Or => .{ .infix_or = .{ .offset = address, .lhs = lhs, .rhs = rhs } },
             .And => .{ .infix_and = .{ .offset = address, .lhs = lhs, .rhs = rhs } },
             .Pipe => .{ .infix_bit_or = .{ .offset = address, .lhs = lhs, .rhs = rhs } },
@@ -245,6 +276,7 @@ pub fn compileExpressionRecursive(self: *@This(), lexer: *Lexer, arg: Ir.Arg, pr
         };
         try self.ir.operations.append(self.allocator, op);
 
+        // TODO not every operation return an address, see asigment
         lhs = Ir.Arg{ .variable = address };
     }
     return lhs;
@@ -315,47 +347,51 @@ pub fn parseBody(self: *@This(), lexer: *Lexer, close_body_tags: anytype) Compil
             // Create label after while
             try self.ir.operations.append(self.allocator, .{ .label = while_end });
         } else if (peek.kind == TokenKind.Identifier) {
-            const id = lexer.next().?.token;
-            const peek_token = lexer.peek().?;
+            _ = try self.compileExpression(lexer);
+            try fetchExpectMany(lexer, .{.EndOfLine});
 
-            // assign
-            if (peek_token.kind == TokenKind.ColonEqual) {
-                try fetchExpectMany(lexer, .{.ColonEqual});
-
-                const declaration = self.ir.findVariable(id) orelse {
-                    try diagnostic(lexer, peek, "Variable '{s}' not found\n", .{id});
-                    return error.UnexpectedToken;
-                };
-
-                const arg = try self.compileExpression(lexer);
-
-                try fetchExpectMany(lexer, .{.EndOfLine});
-                try self.ir.operations.append(self.allocator, .{
-                    .assign = .{
-                        .offset = declaration.var_dec.offset,
-                        .arg = arg,
-                    },
-                });
-            } else if (peek_token.kind == TokenKind.OpenParent) {
-                try fetchExpectMany(lexer, .{.OpenParent});
-                const ArgList = std.ArrayList(Ir.Arg);
-                var args: ArgList = .empty;
-
-                while (lexer.peek().?.kind != TokenKind.CloseParent) {
-                    const arg = try self.compileExpression(lexer);
-                    try args.append(self.allocator, arg);
-
-                    if (lexer.peek().?.kind == TokenKind.Comma) {
-                        _ = lexer.next();
-                    }
-                }
-                try fetchExpectMany(lexer, .{ .CloseParent, .EndOfLine });
-
-                try self.ir.operations.append(self.allocator, .{ .call = .{
-                    .name = id,
-                    .args = try args.toOwnedSlice(self.allocator),
-                } });
-            }
+            // } else if (peek.kind == TokenKind.Identifier) {
+            //     const id = lexer.next().?.token;
+            //     const peek_token = lexer.peek().?;
+            //
+            //     // assign
+            //     if (peek_token.kind == TokenKind.ColonEqual) {
+            //         try fetchExpectMany(lexer, .{.ColonEqual});
+            //
+            //         const declaration = self.ir.findVariable(id) orelse {
+            //             try diagnostic(lexer, peek, "Variable '{s}' not found\n", .{id});
+            //             return error.UnexpectedToken;
+            //         };
+            //
+            //         const arg = try self.compileExpression(lexer);
+            //
+            //         try fetchExpectMany(lexer, .{.EndOfLine});
+            //         try self.ir.operations.append(self.allocator, .{
+            //             .assign = .{
+            //                 .offset = declaration.var_dec.offset,
+            //                 .arg = arg,
+            //             },
+            //         });
+            //     } else if (peek_token.kind == TokenKind.OpenParent) {
+            //         try fetchExpectMany(lexer, .{.OpenParent});
+            //         const ArgList = std.ArrayList(Ir.Arg);
+            //         var args: ArgList = .empty;
+            //
+            //         while (lexer.peek().?.kind != TokenKind.CloseParent) {
+            //             const arg = try self.compileExpression(lexer);
+            //             try args.append(self.allocator, arg);
+            //
+            //             if (lexer.peek().?.kind == TokenKind.Comma) {
+            //                 _ = lexer.next();
+            //             }
+            //         }
+            //         try fetchExpectMany(lexer, .{ .CloseParent, .EndOfLine });
+            //
+            //         try self.ir.operations.append(self.allocator, .{ .call = .{
+            //             .name = id,
+            //             .args = try args.toOwnedSlice(self.allocator),
+            //         } });
+            //     }
         } else {
             // Each body can close with a different tag.
             // For example 'while' must be closed with 'endwhile',

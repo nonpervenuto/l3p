@@ -56,6 +56,7 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) !void {
             \\   mov rbp, rsp
             \\   extrn putchar
             \\   extrn printf
+            \\   extrn scanf
         , .{});
 
         const stackSize = ir.getStackSize();
@@ -85,12 +86,17 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) !void {
                     try w.print("  cmp rax, 0\n", .{});
                     try w.print("  je {s}\n", .{label});
                 },
+                // Associativity Right to Left
                 .assign => |assign| {
-                    const target = assign.offset;
-                    try loadReg(w, "  rax", assign.arg);
-                    try w.print("  mov QWORD [rbp - {d}], rax \n", .{target});
+                    try loadReg(w, "  rax", assign.rhs);
+                    switch (assign.lhs) {
+                        .variable => |offset| try w.print("  mov [rbp - {d}], rax \n", .{offset}),
+                        else => @panic("Not implemented"),
+                    }
                 },
-                .index => |_| {},
+                .index => |_| {
+                    @panic("Not implemented");
+                },
                 .call => |call| {
                     // try w.print("  ;function call\n", .{});
                     const fnName = call.name;

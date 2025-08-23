@@ -51,7 +51,7 @@ pub const Op = union(OpType) {
     label: []const u8,
     jump: []const u8,
     jump_if_false: struct { label: []const u8, arg: Arg },
-    assign: struct { offset: usize, arg: Arg },
+    assign: struct { lhs: Arg, rhs: Arg },
     index: struct { offset: usize, offsetOf: usize, arg: Arg },
     call: struct { name: []const u8, args: []const Arg },
     prefix_neg: struct { offset: usize, arg: Arg },
