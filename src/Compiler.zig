@@ -169,6 +169,7 @@ pub fn parsePrimary(self: *@This(), lexer: *Lexer) CompileError!Ir.Arg {
                 const address = try self.ir.createTempVar(self.allocator, Ir.DataType.numeric);
                 try self.ir.operations.append(self.allocator, .{ .call = .{
                     .name = token.token,
+                    .offset = address,
                     .args = try args.toOwnedSlice(self.allocator),
                 } });
 

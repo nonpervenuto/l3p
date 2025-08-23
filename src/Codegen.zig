@@ -55,6 +55,7 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) !void {
             \\   push rbp
             \\   mov rbp, rsp
             \\   extrn putchar
+            \\   extrn getchar
             \\   extrn printf
             \\   extrn scanf
         , .{});
@@ -114,6 +115,8 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) !void {
                         // TODO azzera il registo AL, serve per chiamara printf, non so se serve per tutte le funzioni extrn
                         try w.print("  xor eax, eax\n", .{});
                         try w.print("  call {s}\n", .{fnName});
+                        // The result of the call is placed in RAX
+                        try w.print("  mov [rbp - {d}], rax\n", .{call.offset});
                     } else {
                         @panic("Call a funzioni esterne supporta al massimo 6 argomenti");
                     }

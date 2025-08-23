@@ -1,0 +1,5 @@
+program readinput 
+begin
+    printf('Write a single character and press enter: ') 
+    printf('Echo: %c\n', getchar())
+end

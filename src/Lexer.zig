@@ -211,6 +211,10 @@ fn isDigitBase(char: u8) bool {
     return char == 'b' or char == 'o' or char == 'x';
 }
 
+fn isIdentifier(char: u8) bool {
+    return char == '_' or std.ascii.isAlphanumeric(char);
+}
+
 pub fn next(self: *@This()) ?Token {
     const eof = self.buffer.len;
     var kind = TokenKind.Unknown;
@@ -370,7 +374,7 @@ pub fn next(self: *@This()) ?Token {
             },
             '_', 'a'...'z', 'A'...'Z' => {
                 self.token_end = self.token_start + 1;
-                while (self.token_end < eof and std.ascii.isAlphanumeric(self.buffer[self.token_end])) {
+                while (self.token_end < eof and isIdentifier(self.buffer[self.token_end])) {
                     self.token_end += 1;
                 }
                 const id = self.buffer[self.token_start..self.token_end];
