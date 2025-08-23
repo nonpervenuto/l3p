@@ -1,0 +1,11 @@
+Program Aseo
+begin
+  InitWindow(800, 600, 'raylib [core] example - basic window')
+  SetTargetFPS(60)
+  while (1) do
+    BeginDrawing()
+    ClearBackground(255)
+    DrawText('Congrats! You created your first window!', 190, 200, 20, 65280)
+    EndDrawing()
+  endwhile
+end

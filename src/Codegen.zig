@@ -121,9 +121,14 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) !void {
                         @panic("Call a funzioni esterne supporta al massimo 6 argomenti");
                     }
                 },
-                .prefix_neg => |prefix| {
+                .unary_neg => |prefix| {
                     try loadReg(w, "  rax", prefix.arg);
                     try w.print("  neg rax\n", .{});
+                    try w.print("  mov [rbp - {d}], rax\n", .{prefix.offset});
+                },
+                .unary_not => |prefix| {
+                    try loadReg(w, "  rax", prefix.arg);
+                    try w.print("  not rax\n", .{});
                     try w.print("  mov [rbp - {d}], rax\n", .{prefix.offset});
                 },
                 .infix_or => |infix| {

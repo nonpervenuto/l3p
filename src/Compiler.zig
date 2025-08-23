@@ -5,6 +5,8 @@ const Lexer = @import("Lexer.zig");
 const Token = Lexer.Token;
 const TokenKind = Lexer.TokenKind;
 
+const Self = @This();
+
 pub const CompileError = error{
     OutOfMemory,
     InvalidLiteral,
@@ -15,8 +17,8 @@ pub const CompileError = error{
 
 allocator: std.mem.Allocator,
 ir: Ir,
-pub fn init(allocator: std.mem.Allocator) @This() {
-    return @This(){
+pub fn init(allocator: std.mem.Allocator) Self {
+    return Self{
         .allocator = allocator,
         .ir = .{
             .variables = .empty,
@@ -25,31 +27,45 @@ pub fn init(allocator: std.mem.Allocator) @This() {
     };
 }
 
-pub fn compile(self: *@This(), path: []const u8, buffer: []const u8) !Ir {
+/// Compile the provided program and return the generated IR
+pub fn compile(self: *Self, path: []const u8, buffer: []const u8) !Ir {
+    return try self.compileProgram(path, buffer);
+}
+
+/// Compile the root program
+pub fn compileProgram(self: *Self, path: []const u8, buffer: []const u8) !Ir {
     var lexer = Lexer.init(path, buffer);
     try fetchExpectMany(&lexer, .{ .Program, .Identifier, .EndOfLine });
+    try self.compileVars(&lexer);
+    try fetchExpectMany(&lexer, .{ .Begin, .EndOfLine });
+    try self.parseBody(&lexer, .{.End});
+    try fetchExpectMany(&lexer, .{ .End, .EndOfLine });
 
+    return self.ir;
+}
+
+fn compileVars(self: *Self, lexer: *Lexer) !void {
     while (lexer.peek().?.kind == TokenKind.Var) {
         var vars: std.ArrayList([]const u8) = .empty;
 
         // Parse variable name list
-        try fetchExpectMany(&lexer, .{.Var});
+        try fetchExpectMany(lexer, .{.Var});
         while (lexer.peek().?.kind != TokenKind.Colon) {
-            const var_token = try getExpect(&lexer, .Identifier);
+            const var_token = try getExpect(lexer, .Identifier);
             try vars.append(self.allocator, var_token.token);
 
             if (lexer.peek().?.kind == TokenKind.Comma) {
-                try fetchExpectMany(&lexer, .{.Comma});
+                try fetchExpectMany(lexer, .{.Comma});
             }
         }
 
         // Parse data types
-        try fetchExpectMany(&lexer, .{.Colon});
+        try fetchExpectMany(lexer, .{.Colon});
 
         const token = lexer.next();
         const kind = token.?.kind;
         if (kind == TokenKind.Numeric) {
-            try fetchExpectMany(&lexer, .{.EndOfLine});
+            try fetchExpectMany(lexer, .{.EndOfLine});
             for (vars.items) |var_name| {
                 const offset = self.ir.calcVarOffset(Ir.DataType.numeric);
                 const variable = Ir.Declaration{ .var_dec = .{
@@ -60,11 +76,11 @@ pub fn compile(self: *@This(), path: []const u8, buffer: []const u8) !Ir {
                 self.ir.variables.append(self.allocator, variable) catch unreachable;
             }
         } else if (kind == TokenKind.Array) {
-            try fetchExpectMany(&lexer, .{.OpenSquare});
-            const token_array_size = try getExpect(&lexer, .IntegerLiteral);
+            try fetchExpectMany(lexer, .{.OpenSquare});
+            const token_array_size = try getExpect(lexer, .IntegerLiteral);
             const array_size = token_array_size.asUsize();
             _ = array_size;
-            try fetchExpectMany(&lexer, .{ .CloseSquare, .Of, .Numeric, .EndOfLine });
+            try fetchExpectMany(lexer, .{ .CloseSquare, .Of, .Numeric, .EndOfLine });
 
             for (vars.items) |var_name| {
                 const dataOffset = self.ir.calcGlobalOffset();
@@ -78,16 +94,10 @@ pub fn compile(self: *@This(), path: []const u8, buffer: []const u8) !Ir {
                 try self.ir.variables.append(self.allocator, variable);
             }
         } else {
-            try diagnostic(&lexer, token, "Expected a type for var but none was found\n", .{});
+            try diagnostic(lexer, token, "Expected a type for var but none was found\n", .{});
             return CompileError.UnexpectedToken;
         }
     }
-
-    try fetchExpectMany(&lexer, .{ .Begin, .EndOfLine });
-    try self.parseBody(&lexer, .{.End});
-    try fetchExpectMany(&lexer, .{ .End, .EndOfLine });
-
-    return self.ir;
 }
 
 fn isOperator(k: TokenKind) bool {
@@ -139,12 +149,12 @@ fn getPrecedence(k: TokenKind) usize {
     };
 }
 
-pub fn compileExpression(self: *@This(), lexer: *Lexer) CompileError!Ir.Arg {
+pub fn compileExpression(self: *Self, lexer: *Lexer) CompileError!Ir.Arg {
     const lhs = try self.parsePrimary(lexer);
     return try self.compileExpressionRecursive(lexer, lhs, 0);
 }
 
-pub fn parsePrimary(self: *@This(), lexer: *Lexer) CompileError!Ir.Arg {
+pub fn parsePrimary(self: *Self, lexer: *Lexer) CompileError!Ir.Arg {
     const token = lexer.next().?;
     const arg: Ir.Arg = switch (token.kind) {
         // Var or Function call
@@ -204,8 +214,13 @@ pub fn parsePrimary(self: *@This(), lexer: *Lexer) CompileError!Ir.Arg {
             try fetchExpectMany(lexer, .{.CloseParent});
             break :arg lhs;
         },
-        .Not => {
-            @panic("Op Not not implemented");
+        .Exclamation => arg: {
+            const arg = try self.compileExpression(lexer);
+            const address = try self.ir.createTempVar(self.allocator, Ir.DataType.numeric);
+            try self.ir.operations.append(self.allocator, .{
+                .unary_not = .{ .offset = address, .arg = arg },
+            });
+            break :arg Ir.Arg{ .variable = address };
         },
         .Minus => arg: {
             const arg = try self.parsePrimary(lexer);
@@ -216,7 +231,7 @@ pub fn parsePrimary(self: *@This(), lexer: *Lexer) CompileError!Ir.Arg {
                 else => {
                     const address = try self.ir.createTempVar(self.allocator, Ir.DataType.numeric);
                     try self.ir.operations.append(self.allocator, .{
-                        .prefix_neg = .{ .offset = address, .arg = arg },
+                        .unary_neg = .{ .offset = address, .arg = arg },
                     });
                     break :arg Ir.Arg{ .variable = address };
                 },
@@ -230,7 +245,7 @@ pub fn parsePrimary(self: *@This(), lexer: *Lexer) CompileError!Ir.Arg {
     return arg;
 }
 
-pub fn compileExpressionRecursive(self: *@This(), lexer: *Lexer, arg: Ir.Arg, precedence: usize) CompileError!Ir.Arg {
+pub fn compileExpressionRecursive(self: *Self, lexer: *Lexer, arg: Ir.Arg, precedence: usize) CompileError!Ir.Arg {
     var lookahead = lexer.peek() orelse return error.UnexpectedEOF;
     var lhs = arg;
     while (isOperator(lookahead.kind) and getPrecedence(lookahead.kind) >= precedence) {
@@ -283,7 +298,7 @@ pub fn compileExpressionRecursive(self: *@This(), lexer: *Lexer, arg: Ir.Arg, pr
     return lhs;
 }
 
-pub fn parseBody(self: *@This(), lexer: *Lexer, close_body_tags: anytype) CompileError!void {
+pub fn parseBody(self: *Self, lexer: *Lexer, close_body_tags: anytype) CompileError!void {
     while (lexer.peek()) |peek| {
         if (peek.kind == TokenKind.If) {
             try fetchExpectMany(lexer, .{.If});
