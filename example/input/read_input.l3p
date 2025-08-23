@@ -1,0 +1,11 @@
+program readinput 
+var x : numeric
+begin
+    printf('Uppercase character\n') 
+    printf('Write a letter in lowercase and press enter: ')
+    x := getchar()
+    while (x < 97 or x > 122) do
+      x := getchar()
+    endwhile
+    printf('Echo: %c\n', x - 32)
+end
