@@ -72,7 +72,7 @@ fn compileVars(self: *Self, lexer: *Lexer) !void {
         } else if (kind == TokenKind.Array) {
             try fetchExpectMany(lexer, .{.OpenSquare});
             const token_array_size = try getExpect(lexer, .IntegerLiteral);
-            const array_size = token_array_size.asUsize();
+            const array_size = try token_array_size.asUsize();
             try fetchExpectMany(lexer, .{ .CloseSquare, .Of, .Numeric, .EndOfLine });
 
             for (vars.items) |var_name| {

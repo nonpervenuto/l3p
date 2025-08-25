@@ -155,8 +155,8 @@ pub const Token = struct {
         return try std.fmt.parseInt(i32, self.token, 0);
     }
 
-    pub fn asUsize(self: Token) usize {
-        const int = self.asInteger() catch 0;
+    pub fn asUsize(self: Token) !usize {
+        const int = try self.asInteger();
         return @as(usize, @intCast(int));
     }
 
