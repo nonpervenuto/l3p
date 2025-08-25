@@ -1,0 +1,12 @@
+Program Main 
+var x, y : numeric
+begin
+    x := 0
+    printf('x is 0: %d \n', x)
+    y := &x
+    x := 2
+    printf('x and *y are both 2: %d %d\n', x, *y)
+    *y := *y * 4
+    printf('x and *y are both 8: %d %d\n', x, *y)
+end
+

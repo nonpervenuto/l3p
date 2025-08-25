@@ -25,6 +25,8 @@ pub const OpType = enum {
     jump,
     jump_if_false,
     assign,
+    ref,
+    store,
     index,
     call,
     unary_not,
@@ -53,6 +55,10 @@ pub const Op = union(OpType) {
     jump: []const u8,
     jump_if_false: struct { label: []const u8, arg: Arg },
     assign: struct { lhs: Arg, rhs: Arg },
+    // take the address
+    ref: struct { offset: usize, arg: Arg },
+    // store the value at the given address
+    store: struct { offset: usize, arg: Arg },
     index: struct { offset: usize, offsetOf: usize, arg: Arg },
     call: struct { name: []const u8, offset: usize, args: []const Arg },
     unary_not: struct { offset: usize, arg: Arg },

@@ -92,8 +92,25 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) !void {
                     try loadReg(w, "  rax", assign.rhs);
                     switch (assign.lhs) {
                         .variable => |offset| try w.print("  mov [rbp - {d}], rax \n", .{offset}),
+                        .deref => |offset| {
+                            try w.print("  mov RBX,  [rbp - {d}] \n", .{offset});
+                            try w.print("  MOV [RBX], RAX  \n", .{});
+                        },
                         else => @panic("Not implemented"),
                     }
+                },
+                .ref => |ref| {
+                    switch (ref.arg) {
+                        .variable => |address| try w.print("  lea RAX, [rbp - {d}]\n", .{address}),
+                        else => @panic("Not implemented"),
+                    }
+                    try w.print("  mov [rbp - {d}], rax \n", .{ref.offset});
+                },
+                .store => |_| {
+                    @panic("Not implemented");
+                    // try w.print("  mov RAX, [rbp - {d}] \n", .{store.offset});
+                    // try loadReg(w, "  RBX", store.arg);
+                    // try w.print("  MOV [RAX], RBX  \n", .{});
                 },
                 .index => |_| {
                     @panic("Not implemented");
@@ -105,12 +122,7 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) !void {
                     if (call.args.len <= registers.len) {
                         for (call.args, 0..) |arg, i| {
                             const reg = registers[i];
-                            switch (arg) {
-                                .variable => |offset| try w.print("  mov {s}, [rbp - {d}] \n", .{ reg, offset }),
-                                .integerLiteral => |value| try w.print("  mov {s}, {d} \n", .{ reg, value }),
-                                .dataLiteral => |value| try w.print("  mov {s}, data{d}+0 \n", .{ reg, value }),
-                                .deref => |_| @panic("Impossibile assgnare un data literal, ad esempio una stringa, ad una variabile"),
-                            }
+                            try loadReg(w, reg, arg);
                         }
                         // TODO azzera il registo AL, serve per chiamara printf, non so se serve per tutte le funzioni extrn
                         try w.print("  xor eax, eax\n", .{});

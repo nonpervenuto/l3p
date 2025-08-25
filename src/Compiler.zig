@@ -156,6 +156,7 @@ pub fn compileExpression(self: *Self, lexer: *Lexer) CompileError!Ir.Arg {
 
 pub fn parsePrimary(self: *Self, lexer: *Lexer) CompileError!Ir.Arg {
     const token = lexer.next().?;
+    std.log.debug("Parsing: {}", .{token.kind});
     const arg: Ir.Arg = switch (token.kind) {
         // Var or Function call
         .Identifier => arg: {
@@ -214,6 +215,20 @@ pub fn parsePrimary(self: *Self, lexer: *Lexer) CompileError!Ir.Arg {
             try fetchExpectMany(lexer, .{.CloseParent});
             break :arg lhs;
         },
+        // Deref
+        .Ampersand => arg: {
+            const arg = try self.compileExpression(lexer);
+            const address = try self.ir.createTempVar(self.allocator, Ir.DataType.numeric);
+            try self.ir.operations.append(self.allocator, .{
+                .ref = .{ .offset = address, .arg = arg },
+            });
+            break :arg Ir.Arg{ .variable = address };
+        },
+        .Multiply => arg: {
+            const arg = try self.parsePrimary(lexer);
+            break :arg Ir.Arg{ .deref = arg.variable };
+        },
+        // Unary Not
         .Exclamation => arg: {
             const arg = try self.compileExpression(lexer);
             const address = try self.ir.createTempVar(self.allocator, Ir.DataType.numeric);
@@ -362,52 +377,9 @@ pub fn parseBody(self: *Self, lexer: *Lexer, close_body_tags: anytype) CompileEr
             try self.ir.operations.append(self.allocator, .{ .jump = while_loop });
             // Create label after while
             try self.ir.operations.append(self.allocator, .{ .label = while_end });
-        } else if (peek.kind == TokenKind.Identifier) {
+        } else if (peek.kind == TokenKind.Identifier or peek.kind == TokenKind.Multiply) {
             _ = try self.compileExpression(lexer);
             try fetchExpectMany(lexer, .{.EndOfLine});
-
-            // } else if (peek.kind == TokenKind.Identifier) {
-            //     const id = lexer.next().?.token;
-            //     const peek_token = lexer.peek().?;
-            //
-            //     // assign
-            //     if (peek_token.kind == TokenKind.ColonEqual) {
-            //         try fetchExpectMany(lexer, .{.ColonEqual});
-            //
-            //         const declaration = self.ir.findVariable(id) orelse {
-            //             try diagnostic(lexer, peek, "Variable '{s}' not found\n", .{id});
-            //             return error.UnexpectedToken;
-            //         };
-            //
-            //         const arg = try self.compileExpression(lexer);
-            //
-            //         try fetchExpectMany(lexer, .{.EndOfLine});
-            //         try self.ir.operations.append(self.allocator, .{
-            //             .assign = .{
-            //                 .offset = declaration.var_dec.offset,
-            //                 .arg = arg,
-            //             },
-            //         });
-            //     } else if (peek_token.kind == TokenKind.OpenParent) {
-            //         try fetchExpectMany(lexer, .{.OpenParent});
-            //         const ArgList = std.ArrayList(Ir.Arg);
-            //         var args: ArgList = .empty;
-            //
-            //         while (lexer.peek().?.kind != TokenKind.CloseParent) {
-            //             const arg = try self.compileExpression(lexer);
-            //             try args.append(self.allocator, arg);
-            //
-            //             if (lexer.peek().?.kind == TokenKind.Comma) {
-            //                 _ = lexer.next();
-            //             }
-            //         }
-            //         try fetchExpectMany(lexer, .{ .CloseParent, .EndOfLine });
-            //
-            //         try self.ir.operations.append(self.allocator, .{ .call = .{
-            //             .name = id,
-            //             .args = try args.toOwnedSlice(self.allocator),
-            //         } });
-            //     }
         } else {
             // Each body can close with a different tag.
             // For example 'while' must be closed with 'endwhile',

@@ -134,9 +134,9 @@ pub const Token = struct {
 
     pub fn format(self: Token, w: *std.Io.Writer) !void {
         if (self.kind == TokenKind.EndOfLine) {
-            try w.print("{d}:{d} {}", .{ self.loc.row, self.loc.col, self.kind });
+            try w.print("{}", .{self.kind});
         } else {
-            try w.print("{d}:{d} {} \"{s}\"", .{ self.loc.row, self.loc.col, self.kind, self.token });
+            try w.print("{} \"{s}\"", .{ self.kind, self.token });
         }
     }
 
@@ -199,14 +199,6 @@ pub fn getLoc(self: *@This(), token: Token) Loc {
     return .{ .row = row, .col = col };
 }
 
-pub fn peek(self: *@This()) ?Token {
-    const savepoint = .{ self.token_start, self.token_end };
-    const next_token = self.next();
-    self.token_start = savepoint[0];
-    self.token_end = savepoint[1];
-    return next_token;
-}
-
 fn isDigitBase(char: u8) bool {
     return char == 'b' or char == 'o' or char == 'x';
 }
@@ -215,7 +207,20 @@ fn isIdentifier(char: u8) bool {
     return char == '_' or std.ascii.isAlphanumeric(char);
 }
 
+pub fn peek(self: *@This()) ?Token {
+    const savepoint = .{ self.token_start, self.token_end };
+    const next_token = self.get();
+    self.token_start = savepoint[0];
+    self.token_end = savepoint[1];
+    return next_token;
+}
+
 pub fn next(self: *@This()) ?Token {
+    const token = self.get();
+    return token;
+}
+
+pub fn get(self: *@This()) ?Token {
     const eof = self.buffer.len;
     var kind = TokenKind.Unknown;
     while (self.token_start < eof) {
@@ -415,6 +420,7 @@ pub fn next(self: *@This()) ?Token {
             .token_start = self.token_start,
         };
         self.token_start = self.token_end;
+
         return plex;
     }
     return null;
