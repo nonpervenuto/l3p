@@ -53,7 +53,6 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
     const file_name_asm = try self.getFileName(path, "asm");
     const file_path_asm = try std.fmt.allocPrint(self.allocator, "l3p-out/{s}", .{file_name_asm});
     const file = try std.fs.cwd().createFile(file_path_asm, .{ .truncate = true });
-    errdefer file.close();
 
     var stdout_buffer: [4096]u8 = undefined;
     var stdout_writer = file.writer(&stdout_buffer);
@@ -362,16 +361,10 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
                 .global_dec => |global| {
                     if (global.data != null) {
                         try w.print("   data{d}: db ", .{global.address});
-                        for (global.data.?, 0..) |char, i| {
-                            try w.print("0x{X}", .{char});
-                            if (i < global.data.?.len - 1) {
-                                try w.print(", ", .{});
-                            } else {
-                                try w.print(", ", .{});
-                            }
+                        for (global.data.?) |char| {
+                            try w.print("0x{X},", .{char});
                         }
-                        try w.print("0x00", .{});
-                        try w.print("\n", .{});
+                        try w.print("0x00\n", .{});
                     }
                 },
             }
@@ -383,26 +376,37 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
     {
         const asm_name = try self.getFileName(path, "asm");
         const asm_path = try std.fmt.allocPrint(self.allocator, "l3p-out/{s}", .{asm_name});
-        std.log.info("Creating: {s}", .{asm_path});
         var cmd = std.process.Child.init(&[_][]const u8{ "fasm", asm_path }, self.allocator);
 
         try cmd.spawn();
-        _ = cmd.wait() catch |e| {
-            std.log.err("Error running fasm: {t}", .{e});
+        const term = cmd.wait() catch {
+            return error.FasmError;
         };
+
+        // Check status code
+        if (!switch (term) {
+            .Exited => |code| code == 0,
+            else => false,
+        }) return error.GccError;
     }
 
     {
         const exe_name = try self.getFileName(path, null);
         const exe_path = try std.fmt.allocPrint(self.allocator, "l3p-out/{s}", .{exe_name});
-        std.log.info("Creating: {s}", .{exe_path});
         const o_name = try self.getFileName(path, "o");
         const o_path = try std.fmt.allocPrint(self.allocator, "l3p-out/{s}", .{o_name});
         var cmd = std.process.Child.init(&[_][]const u8{ "gcc", "-no-pie", "-o", exe_path, o_path }, self.allocator);
         try cmd.spawn();
-        _ = cmd.wait() catch |e| {
-            std.log.err("Error running gcc: {t}", .{e});
+        const term = cmd.wait() catch {
+            return error.GccError;
         };
+
+        // Check status code
+        if (!switch (term) {
+            .Exited => |code| code == 0,
+            else => false,
+        }) return error.GccError;
+
         return exe_name;
     }
 }
