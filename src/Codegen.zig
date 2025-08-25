@@ -47,8 +47,12 @@ fn getFileName(self: @This(), path: []const u8, ext: ?[]const u8) ![]const u8 {
 }
 
 pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
+    const cwd = std.fs.cwd();
+    cwd.makeDir("l3p-out") catch {};
+
     const file_name_asm = try self.getFileName(path, "asm");
-    const file = try std.fs.cwd().createFile(file_name_asm, .{ .truncate = true });
+    const file_path_asm = try std.fmt.allocPrint(self.allocator, "l3p-out/{s}", .{file_name_asm});
+    const file = try std.fs.cwd().createFile(file_path_asm, .{ .truncate = true });
     errdefer file.close();
 
     var stdout_buffer: [4096]u8 = undefined;
@@ -380,9 +384,10 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
     file.close();
 
     {
-        const f = try self.getFileName(path, "asm");
-        std.log.info("Creating: {s}", .{f});
-        var cmd = std.process.Child.init(&[_][]const u8{ "fasm", f }, self.allocator);
+        const asm_name = try self.getFileName(path, "asm");
+        const asm_path = try std.fmt.allocPrint(self.allocator, "l3p-out/{s}", .{asm_name});
+        std.log.info("Creating: {s}", .{asm_path});
+        var cmd = std.process.Child.init(&[_][]const u8{ "fasm", asm_path }, self.allocator);
 
         try cmd.spawn();
         _ = cmd.wait() catch |e| {
@@ -392,9 +397,11 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
 
     {
         const exe_name = try self.getFileName(path, null);
-        std.log.info("Creating: {s}", .{exe_name});
-        const f = try self.getFileName(path, "o");
-        var cmd = std.process.Child.init(&[_][]const u8{ "gcc", "-no-pie", "-o", exe_name, f }, self.allocator);
+        const exe_path = try std.fmt.allocPrint(self.allocator, "l3p-out/{s}", .{exe_name});
+        std.log.info("Creating: {s}", .{exe_path});
+        const o_name = try self.getFileName(path, "o");
+        const o_path = try std.fmt.allocPrint(self.allocator, "l3p-out/{s}", .{o_name});
+        var cmd = std.process.Child.init(&[_][]const u8{ "gcc", "-no-pie", "-o", exe_path, o_path }, self.allocator);
         try cmd.spawn();
         _ = cmd.wait() catch |e| {
             std.log.err("Error running gcc: {t}", .{e});

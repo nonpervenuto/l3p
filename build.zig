@@ -45,6 +45,7 @@ pub fn build(b: *std.Build) !void {
     while (try it.next()) |entry| {
         const file_name = getFileName(entry.name);
         if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.name, ".l3p")) continue;
 
         // build exe
         const build_test_exe = b.addRunArtifact(exe);
@@ -55,7 +56,7 @@ pub fn build(b: *std.Build) !void {
         build_test_exe.setName(b.fmt("Compile test: {s}", .{entry.name}));
 
         // run exe
-        const run_test_exe = b.addSystemCommand(&.{b.fmt("./{s}", .{file_name})});
+        const run_test_exe = b.addSystemCommand(&.{b.fmt("./l3p-out/{s}", .{file_name})});
         run_test_exe.setName(b.fmt("Running test: {s}", .{file_name}));
         run_test_exe.step.dependOn(&build_test_exe.step);
         const output = run_test_exe.captureStdOut();
@@ -74,6 +75,7 @@ pub fn build(b: *std.Build) !void {
             "--cached",
             "--exit-code",
         });
+        diff.setName(b.fmt("Comparing snapshot: {s}", .{file_name}));
         diff.addDirectoryArg(b.path(b.fmt(
             "tests/snapshots/{s}.txt",
             .{file_name},
