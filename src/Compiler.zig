@@ -141,7 +141,6 @@ pub fn compileExpression(self: *Self, lexer: *Lexer) CompileError!Ir.Arg {
 
 pub fn parsePrimary(self: *Self, lexer: *Lexer) CompileError!Ir.Arg {
     const token = lexer.next().?;
-    std.log.debug("Parsing: {}", .{token.kind});
     const arg: Ir.Arg = switch (token.kind) {
         // Var or Function call
         .Identifier => arg: {
@@ -384,6 +383,9 @@ pub fn parseBody(self: *Self, lexer: *Lexer, close_body_tags: anytype) CompileEr
         } else if (peek.kind == TokenKind.Identifier or peek.kind == TokenKind.Multiply) {
             _ = try self.compileExpression(lexer);
             try fetchExpectMany(lexer, .{.EndOfLine});
+        } else if (peek.kind == TokenKind.EndOfLine) {
+            try fetchExpectMany(lexer, .{.EndOfLine});
+            continue;
         } else {
             // Each body can close with a different tag.
             // For example 'while' must be closed with 'endwhile',

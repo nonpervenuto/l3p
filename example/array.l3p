@@ -20,12 +20,10 @@ begin
   arr2[i + 0] := 100
   arr2[i + 1] := 200
   arr2[i + 2] := 300
-
-  i := 0
-  while i < 3 do
-    printf('%d\n', arr2[i])
-    i := i + 1
-  endwhile
+  
+  printf('%d\n', arr2[0])
+  printf('%d\n', arr2[1])
+  printf('%d\n', arr2[2])
 
 end
 
