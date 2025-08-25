@@ -1,4 +1,21 @@
-Program Main
+Program Main 
+var h: numeric
+var e: numeric
+var l1: numeric
+var l2: numeric
+var l3: numeric
 begin
-    printf(' ASEOAA\n')
+    h := 72
+    e := 69 
+    l1 := 76 
+    l2 := l1
+    l3 := l2
+    putchar(h)
+    putchar(e)
+    putchar(l1)
+    putchar(l2)
+    putchar(l3)
+    putchar(10)
+    printf('Bazinga')
+    printf(' ASEO\n')
 end
