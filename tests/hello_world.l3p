@@ -17,5 +17,4 @@ begin
     putchar(l3)
     putchar(10)
     printf('Bazinga')
-    printf(' ASEO\n')
 end

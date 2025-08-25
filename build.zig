@@ -59,6 +59,7 @@ pub fn build(b: *std.Build) !void {
         const run_test_exe = b.addSystemCommand(&.{b.fmt("./l3p-out/{s}", .{file_name})});
         run_test_exe.setName(b.fmt("Running test: {s}", .{file_name}));
         run_test_exe.step.dependOn(&build_test_exe.step);
+        run_test_exe.has_side_effects = true;
         const output = run_test_exe.captureStdOut();
 
         // write exe output
@@ -72,7 +73,6 @@ pub fn build(b: *std.Build) !void {
         const diff = b.addSystemCommand(&.{
             "git",
             "diff",
-            "--cached",
             "--exit-code",
         });
         diff.setName(b.fmt("Comparing snapshot: {s}", .{file_name}));
