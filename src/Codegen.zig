@@ -194,7 +194,10 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
                         .variable => |rhs_offset| try w.print("  or rax, [rbp - {d}]\n", .{rhs_offset}),
                         .integerLiteral => |rhs_value| try w.print("  or rax, {d} \n", .{rhs_value}),
                         .dataLiteral => |_| @panic("Impossibile assgnare un data literal, ad esempio una stringa, ad una variabile"),
-                        .deref => |_| @panic("Impossibile assgnare un data literal, ad esempio una stringa, ad una variabile"),
+                        .deref => |offset| {
+                            try w.print("  mov RBX,  [rbp - {d}] \n", .{offset});
+                            try w.print("  OR [RBX], RAX  \n", .{});
+                        },
                     }
                     try w.print("  mov [rbp - {d}], rax\n", .{target_offset});
                 },
@@ -269,21 +272,15 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
                 .infix_shift_left => |infix| {
                     const target_offset = infix.offset;
                     try loadReg(w, "  rax", infix.lhs);
-                    switch (infix.rhs) {
-                        .variable => |rhs_offset| try w.print("  shl rax, [rbp - {d}] \n", .{rhs_offset}),
-                        .integerLiteral => |rhs_value| try w.print("  shl rax, {d} \n", .{rhs_value}),
-                        else => @panic("Not implemented"),
-                    }
+                    try loadReg(w, "  rcx", infix.rhs);
+                    try w.print("  SHR RAX, CL \n", .{});
                     try w.print("  mov [rbp - {d}], rax\n", .{target_offset});
                 },
                 .infix_shift_right => |infix| {
                     const target_offset = infix.offset;
                     try loadReg(w, "  rax", infix.lhs);
-                    switch (infix.rhs) {
-                        .variable => |rhs_offset| try w.print("  shr rax, [rbp - {d}] \n", .{rhs_offset}),
-                        .integerLiteral => |rhs_value| try w.print("  shr rax, {d} \n", .{rhs_value}),
-                        else => @panic("Not implemented"),
-                    }
+                    try loadReg(w, "  rcx", infix.rhs);
+                    try w.print("  SHR RAX, CL \n", .{});
                     try w.print("  mov [rbp - {d}], rax\n", .{target_offset});
                 },
                 .infix_plus => |infix_plus| {
