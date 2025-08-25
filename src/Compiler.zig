@@ -67,31 +67,16 @@ fn compileVars(self: *Self, lexer: *Lexer) !void {
         if (kind == TokenKind.Numeric) {
             try fetchExpectMany(lexer, .{.EndOfLine});
             for (vars.items) |var_name| {
-                const offset = self.ir.calcVarOffset(Ir.DataType.numeric);
-                const variable = Ir.Declaration{ .var_dec = .{
-                    .name = var_name,
-                    .offset = offset,
-                    .type = Ir.DataType.numeric,
-                } };
-                self.ir.variables.append(self.allocator, variable) catch unreachable;
+                _ = try self.ir.createVar(self.allocator, var_name, .{ .primitive = .number });
             }
         } else if (kind == TokenKind.Array) {
             try fetchExpectMany(lexer, .{.OpenSquare});
             const token_array_size = try getExpect(lexer, .IntegerLiteral);
             const array_size = token_array_size.asUsize();
-            _ = array_size;
             try fetchExpectMany(lexer, .{ .CloseSquare, .Of, .Numeric, .EndOfLine });
 
             for (vars.items) |var_name| {
-                const dataOffset = self.ir.calcGlobalOffset();
-                const variable = Ir.Declaration{
-                    .global_dec = .{
-                        .name = var_name,
-                        .address = dataOffset,
-                        .data = null,
-                    },
-                };
-                try self.ir.variables.append(self.allocator, variable);
+                _ = try self.ir.createVar(self.allocator, var_name, .{ .array = .{ .type = .number, .len = array_size } });
             }
         } else {
             try diagnostic(lexer, token, "Expected a type for var but none was found\n", .{});
@@ -160,8 +145,9 @@ pub fn parsePrimary(self: *Self, lexer: *Lexer) CompileError!Ir.Arg {
     const arg: Ir.Arg = switch (token.kind) {
         // Var or Function call
         .Identifier => arg: {
-            const isPeekOpenParent = if (lexer.peek()) |peek| peek.kind == TokenKind.OpenParent else false;
-            if (isPeekOpenParent) {
+            const peek = if (lexer.peek()) |peek| peek.kind else TokenKind.Unknown;
+
+            if (peek == TokenKind.OpenParent) {
                 try fetchExpectMany(lexer, .{.OpenParent});
                 const ArgList = std.ArrayList(Ir.Arg);
                 var args: ArgList = .empty;
@@ -177,7 +163,7 @@ pub fn parsePrimary(self: *Self, lexer: *Lexer) CompileError!Ir.Arg {
                 try fetchExpectMany(lexer, .{.CloseParent});
 
                 // The result of the function is stored in a temporary variable
-                const address = try self.ir.createTempVar(self.allocator, Ir.DataType.numeric);
+                const address = try self.ir.createTempVar(self.allocator, .{ .primitive = .number });
                 try self.ir.operations.append(self.allocator, .{ .call = .{
                     .name = token.token,
                     .offset = address,
@@ -185,6 +171,24 @@ pub fn parsePrimary(self: *Self, lexer: *Lexer) CompileError!Ir.Arg {
                 } });
 
                 break :arg Ir.Arg{ .variable = address };
+            } else if (peek == TokenKind.OpenSquare) {
+                try fetchExpectMany(lexer, .{.OpenSquare});
+                const arg = try self.compileExpression(lexer);
+                try fetchExpectMany(lexer, .{.CloseSquare});
+
+                const variable = self.ir.findVariable(token.token) orelse {
+                    try diagnostic(lexer, token, "Variable '{s}' is not defined.\n", .{token.token});
+                    return error.UnexpectedToken;
+                };
+
+                const address = try self.ir.createTempVar(self.allocator, .{ .primitive = .number });
+                try self.ir.operations.append(self.allocator, .{ .index = .{
+                    .offset = address,
+                    .var_address = variable.var_dec.offset,
+                    .var_index = arg,
+                } });
+
+                break :arg Ir.Arg{ .deref = address };
             } else {
                 const variable = self.ir.findVariable(token.token) orelse {
                     try diagnostic(lexer, token, "Variable '{s}' is not defined.\n", .{token.token});
@@ -218,7 +222,7 @@ pub fn parsePrimary(self: *Self, lexer: *Lexer) CompileError!Ir.Arg {
         // Deref
         .Ampersand => arg: {
             const arg = try self.compileExpression(lexer);
-            const address = try self.ir.createTempVar(self.allocator, Ir.DataType.numeric);
+            const address = try self.ir.createTempVar(self.allocator, .{ .primitive = .pointer });
             try self.ir.operations.append(self.allocator, .{
                 .ref = .{ .offset = address, .arg = arg },
             });
@@ -231,7 +235,7 @@ pub fn parsePrimary(self: *Self, lexer: *Lexer) CompileError!Ir.Arg {
         // Unary Not
         .Exclamation => arg: {
             const arg = try self.compileExpression(lexer);
-            const address = try self.ir.createTempVar(self.allocator, Ir.DataType.numeric);
+            const address = try self.ir.createTempVar(self.allocator, .{ .primitive = .boolean });
             try self.ir.operations.append(self.allocator, .{
                 .unary_not = .{ .offset = address, .arg = arg },
             });
@@ -244,7 +248,7 @@ pub fn parsePrimary(self: *Self, lexer: *Lexer) CompileError!Ir.Arg {
                     break :arg Ir.Arg{ .integerLiteral = -value };
                 },
                 else => {
-                    const address = try self.ir.createTempVar(self.allocator, Ir.DataType.numeric);
+                    const address = try self.ir.createTempVar(self.allocator, .{ .primitive = .number });
                     try self.ir.operations.append(self.allocator, .{
                         .unary_neg = .{ .offset = address, .arg = arg },
                     });
@@ -275,7 +279,7 @@ pub fn compileExpressionRecursive(self: *Self, lexer: *Lexer, arg: Ir.Arg, prece
         }
 
         // TODO if kind is assigment this temporary varialbe is not necessary
-        const address = try self.ir.createTempVar(self.allocator, Ir.DataType.numeric);
+        const address = try self.ir.createTempVar(self.allocator, .{ .primitive = .number });
 
         const op: Ir.Op = switch (kind) {
             .Assign => .{ .assign = .{ .lhs = lhs, .rhs = rhs } },

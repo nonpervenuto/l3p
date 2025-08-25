@@ -112,8 +112,17 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) !void {
                     // try loadReg(w, "  RBX", store.arg);
                     // try w.print("  MOV [RAX], RBX  \n", .{});
                 },
-                .index => |_| {
-                    @panic("Not implemented");
+                .index => |index| {
+                    // address di var
+                    try w.print("  lea RAX, [rbp - {d}]\n", .{index.var_address});
+
+                    // carico l'indice e l'ho moltiplico per 8
+                    try loadReg(w, "  RBX", index.var_index);
+                    try w.print("  IMUL RBX, 8\n", .{});
+
+                    // modifiy address
+                    try w.print("  ADD RAX, RBX\n", .{});
+                    try w.print("  mov [rbp - {d}], rax \n", .{index.offset});
                 },
                 .call => |call| {
                     // try w.print("  ;function call\n", .{});

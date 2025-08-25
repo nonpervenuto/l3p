@@ -3,13 +3,15 @@ const std = @import("std");
 pub const ArgType = enum { variable, integerLiteral, dataLiteral, deref };
 pub const Arg = union(ArgType) { variable: usize, integerLiteral: i32, dataLiteral: usize, deref: usize };
 
-pub const DataType = enum { numeric };
+pub const DataType = enum { pointer, number, boolean };
+pub const VarType = union(enum) { primitive: DataType, array: struct { len: usize, type: DataType } };
+
 pub const DeclarationType = enum { var_dec, global_dec };
 pub const Declaration = union(DeclarationType) {
     var_dec: struct {
         name: []const u8,
         offset: usize,
-        type: DataType,
+        type: VarType,
     },
     global_dec: struct {
         name: []const u8,
@@ -59,7 +61,7 @@ pub const Op = union(OpType) {
     ref: struct { offset: usize, arg: Arg },
     // store the value at the given address
     store: struct { offset: usize, arg: Arg },
-    index: struct { offset: usize, offsetOf: usize, arg: Arg },
+    index: struct { offset: usize, var_address: usize, var_index: Arg },
     call: struct { name: []const u8, offset: usize, args: []const Arg },
     unary_not: struct { offset: usize, arg: Arg },
     unary_neg: struct { offset: usize, arg: Arg },
@@ -96,7 +98,18 @@ pub fn createLabel(self: *@This(), allocator: std.mem.Allocator, name: []const u
     return label;
 }
 
-pub fn createTempVar(self: *@This(), allocator: std.mem.Allocator, dataType: DataType) !usize {
+pub fn createVar(self: *@This(), allocator: std.mem.Allocator, name: []const u8, dataType: VarType) !usize {
+    const address = self.calcVarOffset(dataType);
+    try self.variables.append(
+        allocator,
+        Declaration{
+            .var_dec = .{ .name = name, .offset = address, .type = dataType },
+        },
+    );
+    return address;
+}
+
+pub fn createTempVar(self: *@This(), allocator: std.mem.Allocator, dataType: VarType) !usize {
     const address = self.calcVarOffset(dataType);
     try self.variables.append(
         allocator,
@@ -121,8 +134,8 @@ pub fn findVariable(self: *@This(), name: []const u8) ?Declaration {
     return null;
 }
 
-pub fn calcVarOffset(self: *@This(), dataType: DataType) usize {
-    var sum: usize = getVariableSize(dataType);
+pub fn calcVarOffset(self: *@This(), varType: VarType) usize {
+    var sum: usize = getVariableSize(varType);
     for (self.variables.items) |variable| {
         sum += switch (variable) {
             .var_dec => |value| getVariableSize(value.type),
@@ -154,8 +167,9 @@ pub fn getStackSize(self: *@This()) usize {
     return size;
 }
 
-pub fn getVariableSize(value: DataType) usize {
-    return switch (value) {
-        .numeric => 8,
+pub fn getVariableSize(varType: VarType) usize {
+    return switch (varType) {
+        .primitive => 8,
+        .array => |array| 8 * array.len,
     };
 }
