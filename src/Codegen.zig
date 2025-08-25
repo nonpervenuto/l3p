@@ -271,15 +271,15 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
                 },
                 .infix_shift_left => |infix| {
                     const target_offset = infix.offset;
-                    try loadReg(w, "  rax", infix.lhs);
-                    try loadReg(w, "  rcx", infix.rhs);
-                    try w.print("  SHR RAX, CL \n", .{});
-                    try w.print("  mov [rbp - {d}], rax\n", .{target_offset});
+                    try loadReg(w, "  RAX", infix.lhs);
+                    try loadReg(w, "  RCX", infix.rhs);
+                    try w.print("  SHL RAX, CL \n", .{});
+                    try w.print("  mov [rbp - {d}], RAX\n", .{target_offset});
                 },
                 .infix_shift_right => |infix| {
                     const target_offset = infix.offset;
-                    try loadReg(w, "  rax", infix.lhs);
-                    try loadReg(w, "  rcx", infix.rhs);
+                    try loadReg(w, "  RAX", infix.lhs);
+                    try loadReg(w, "  RCX", infix.rhs);
                     try w.print("  SHR RAX, CL \n", .{});
                     try w.print("  mov [rbp - {d}], rax\n", .{target_offset});
                 },
