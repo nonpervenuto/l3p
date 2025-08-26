@@ -1,0 +1,12 @@
+Program Main 
+var ch : char
+var fptr : numeric
+begin
+    fptr := fopen('LICENSE', 'r')
+    ch := fgetc(fptr)
+    while ch != 0xFFFFFFFF do
+      printf('%c', ch)
+      ch := fgetc(fptr)
+    endwhile
+    fclose(fptr)
+end

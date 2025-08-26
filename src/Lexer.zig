@@ -1,12 +1,15 @@
 const std = @import("std");
 const upperString = std.ascii.upperString;
 const eql = std.mem.eql;
+const isHex = std.ascii.isHex;
 const isDigit = std.ascii.isDigit;
 
 pub const keywords = [_][]const u8{
     "PROGRAM",
     "VAR",
     "NUMERIC",
+    "CHAR",
+    "REAL",
     "BEGIN",
     "WHILE",
     "DO",
@@ -28,6 +31,8 @@ pub const keywords_map = [_]TokenKind{
     .Program,
     .Var,
     .Numeric,
+    .Char,
+    .Real,
     .Begin,
     .While,
     .Do,
@@ -51,6 +56,7 @@ pub const TokenKind = enum {
     Program,
     Var,
     Numeric,
+    Char,
     Real,
     Array,
     Of,
@@ -151,8 +157,8 @@ pub const Token = struct {
         }
     }
 
-    pub fn asInteger(self: Token) !i32 {
-        return try std.fmt.parseInt(i32, self.token, 0);
+    pub fn asInteger(self: Token) !u32 {
+        return try std.fmt.parseInt(u32, self.token, 0);
     }
 
     pub fn asUsize(self: Token) !usize {
@@ -389,7 +395,7 @@ pub fn get(self: *@This()) ?Token {
                 self.token_end = self.token_start + 1;
                 if (isDigitBase(self.buffer[self.token_end])) {
                     self.token_end += 1;
-                    while (self.token_end < eof and isDigit(self.buffer[self.token_end])) {
+                    while (self.token_end < eof and isHex(self.buffer[self.token_end])) {
                         self.token_end += 1;
                     }
                 } else {

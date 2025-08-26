@@ -69,6 +69,11 @@ fn compileVars(self: *Self, lexer: *Lexer) !void {
             for (vars.items) |var_name| {
                 _ = try self.ir.createVar(self.allocator, var_name, .{ .primitive = .number });
             }
+        } else if (kind == TokenKind.Char) {
+            try fetchExpectMany(lexer, .{.EndOfLine});
+            for (vars.items) |var_name| {
+                _ = try self.ir.createVar(self.allocator, var_name, .{ .primitive = .char });
+            }
         } else if (kind == TokenKind.Array) {
             try fetchExpectMany(lexer, .{.OpenSquare});
             const token_array_size = try getExpect(lexer, .IntegerLiteral);
@@ -242,18 +247,11 @@ pub fn parsePrimary(self: *Self, lexer: *Lexer) CompileError!Ir.Arg {
         },
         .Minus => arg: {
             const arg = try self.parsePrimary(lexer);
-            switch (arg) {
-                .integerLiteral => |value| {
-                    break :arg Ir.Arg{ .integerLiteral = -value };
-                },
-                else => {
-                    const address = try self.ir.createTempVar(self.allocator, .{ .primitive = .number });
-                    try self.ir.operations.append(self.allocator, .{
-                        .unary_neg = .{ .offset = address, .arg = arg },
-                    });
-                    break :arg Ir.Arg{ .variable = address };
-                },
-            }
+            const address = try self.ir.createTempVar(self.allocator, .{ .primitive = .number });
+            try self.ir.operations.append(self.allocator, .{
+                .unary_neg = .{ .offset = address, .arg = arg },
+            });
+            break :arg Ir.Arg{ .variable = address };
         },
         else => {
             try diagnostic(lexer, token, "Unexpected token '{s}'\n", .{token.token});

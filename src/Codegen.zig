@@ -24,8 +24,8 @@ pub fn write(w: anytype, comptime code: []const u8, args: anytype) !void {
 
 fn loadReg(w: anytype, reg: []const u8, arg: Ir.Arg) !void {
     switch (arg) {
-        .variable => |address| try w.print("  mov {s}, QWORD [rbp - {d}] \n", .{ reg, address }),
-        .integerLiteral => |value| try w.print("  mov {s}, QWORD {d} \n", .{ reg, value }),
+        .variable => |address| try w.print("  mov {s}, [rbp - {d}] \n", .{ reg, address }),
+        .integerLiteral => |value| try w.print("  mov {s}, 0x{X} \n", .{ reg, value }),
         .dataLiteral => |value| try w.print("  mov {s}, data{d}+0 \n", .{ reg, value }),
         .deref => |address| {
             try w.print(" mov {s}, [rbp - {d}]\n", .{ reg, address });
@@ -70,6 +70,9 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
             \\   extrn getchar
             \\   extrn printf
             \\   extrn scanf
+            \\   extrn fopen
+            \\   extrn fgetc
+            \\   extrn fclose
         , .{});
 
         const stackSize = ir.getStackSize();
@@ -169,7 +172,7 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
                     try loadReg(w, "  rax", infix.lhs);
                     switch (infix.rhs) {
                         .variable => |rhs_offset| try w.print("  or rax, [rbp - {d}]\n", .{rhs_offset}),
-                        .integerLiteral => |rhs_value| try w.print("  or rax, {d} \n", .{rhs_value}),
+                        .integerLiteral => |rhs_value| try w.print("  or rax, 0x{X} \n", .{rhs_value}),
                         .dataLiteral => |_| @panic("Impossibile assgnare un data literal, ad esempio una stringa, ad una variabile"),
                         .deref => |_| @panic("Impossibile assgnare un data literal, ad esempio una stringa, ad una variabile"),
                     }
@@ -180,7 +183,7 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
                     try loadReg(w, "  rax", infix.lhs);
                     switch (infix.rhs) {
                         .variable => |rhs_offset| try w.print("  and rax, [rbp - {d}]\n", .{rhs_offset}),
-                        .integerLiteral => |rhs_value| try w.print("  and rax, {d} \n", .{rhs_value}),
+                        .integerLiteral => |rhs_value| try w.print("  and rax, 0x{X} \n", .{rhs_value}),
                         .dataLiteral => |_| @panic("Impossibile assgnare un data literal, ad esempio una stringa, ad una variabile"),
                         .deref => |_| @panic("Impossibile assgnare un data literal, ad esempio una stringa, ad una variabile"),
                     }
@@ -191,7 +194,7 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
                     try loadReg(w, "  rax", infix.lhs);
                     switch (infix.rhs) {
                         .variable => |rhs_offset| try w.print("  or rax, [rbp - {d}]\n", .{rhs_offset}),
-                        .integerLiteral => |rhs_value| try w.print("  or rax, {d} \n", .{rhs_value}),
+                        .integerLiteral => |rhs_value| try w.print("  or rax, 0x{X} \n", .{rhs_value}),
                         .dataLiteral => |_| @panic("Impossibile assgnare un data literal, ad esempio una stringa, ad una variabile"),
                         .deref => |offset| {
                             try w.print("  mov RBX,  [rbp - {d}] \n", .{offset});
@@ -205,7 +208,7 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
                     try loadReg(w, "  rax", infix.lhs);
                     switch (infix.rhs) {
                         .variable => |rhs_offset| try w.print("  xor rax, [rbp - {d}]\n", .{rhs_offset}),
-                        .integerLiteral => |rhs_value| try w.print("  xor rax, {d} \n", .{rhs_value}),
+                        .integerLiteral => |rhs_value| try w.print("  xor rax, 0x{X} \n", .{rhs_value}),
                         else => @panic("Not implemented"),
                     }
                     try w.print("  mov [rbp - {d}], rax\n", .{target_offset});
@@ -215,7 +218,7 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
                     try loadReg(w, "  rax", infix.lhs);
                     switch (infix.rhs) {
                         .variable => |rhs_offset| try w.print("  and rax, [rbp - {d}]\n", .{rhs_offset}),
-                        .integerLiteral => |rhs_value| try w.print("  and rax, {d} \n", .{rhs_value}),
+                        .integerLiteral => |rhs_value| try w.print("  and rax, 0x{X} \n", .{rhs_value}),
                         else => @panic("Not implemented"),
                     }
                     try w.print("  mov [rbp - {d}], rax\n", .{target_offset});
@@ -287,7 +290,7 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
                     try loadReg(w, "  rax", infix_plus.lhs);
                     switch (infix_plus.rhs) {
                         .variable => |rhs_offset| try w.print("  add rax, [rbp - {d}] \n", .{rhs_offset}),
-                        .integerLiteral => |rhs_value| try w.print("  add rax, {d} \n", .{rhs_value}),
+                        .integerLiteral => |rhs_value| try w.print("  add rax, 0x{X} \n", .{rhs_value}),
                         else => @panic("Not implemented"),
                     }
                     try w.print("  mov [rbp - {d}], rax\n", .{target_offset});
@@ -297,7 +300,7 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
                     try loadReg(w, "  rax", infix.lhs);
                     switch (infix.rhs) {
                         .variable => |rhs_offset| try w.print("  sub rax, QWORD [rbp - {d}] \n", .{rhs_offset}),
-                        .integerLiteral => |rhs_value| try w.print("  sub QWORD rax, {d} \n", .{rhs_value}),
+                        .integerLiteral => |rhs_value| try w.print("  sub QWORD rax, 0x{X} \n", .{rhs_value}),
                         else => @panic("Not implemented"),
                     }
                     try w.print("  mov QWORD [rbp - {d}], rax\n", .{target_offset});
@@ -307,7 +310,7 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
                     try loadReg(w, "  rax", infix.lhs);
                     switch (infix.rhs) {
                         .variable => |rhs_offset| try w.print("  imul rax, [rbp - {d}] \n", .{rhs_offset}),
-                        .integerLiteral => |rhs_value| try w.print("  imul rax, {d} \n", .{rhs_value}),
+                        .integerLiteral => |rhs_value| try w.print("  imul rax, 0x{X} \n", .{rhs_value}),
                         else => @panic("Not implemented"),
                     }
                     try w.print("  mov [rbp - {d}], rax\n", .{target_offset});
@@ -318,7 +321,7 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
                     try loadReg(w, "  rax", infix.lhs);
                     switch (infix.rhs) {
                         .variable => |rhs_offset| try w.print("  mov rbx, [rbp - {d}]\n", .{rhs_offset}),
-                        .integerLiteral => |rhs_value| try w.print("  mov rbx, {d} \n", .{rhs_value}),
+                        .integerLiteral => |rhs_value| try w.print("  mov rbx, 0x{X} \n", .{rhs_value}),
                         else => @panic("Not implemented"),
                     }
                     try w.print("  div rbx\n", .{});
@@ -331,7 +334,7 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
                     try loadReg(w, "  rax", infix.lhs);
                     switch (infix.rhs) {
                         .variable => |rhs_offset| try w.print("  mov rbx, [rbp - {d}]\n", .{rhs_offset}),
-                        .integerLiteral => |rhs_value| try w.print("  mov rbx, {d} \n", .{rhs_value}),
+                        .integerLiteral => |rhs_value| try w.print("  mov rbx, 0x{X} \n", .{rhs_value}),
                         else => @panic("Not implemented"),
                     }
                     try w.print("  div rbx\n", .{});

@@ -1,9 +1,9 @@
 const std = @import("std");
 
 pub const ArgType = enum { variable, integerLiteral, dataLiteral, deref };
-pub const Arg = union(ArgType) { variable: usize, integerLiteral: i32, dataLiteral: usize, deref: usize };
+pub const Arg = union(ArgType) { variable: usize, integerLiteral: u32, dataLiteral: usize, deref: usize };
 
-pub const DataType = enum { pointer, number, boolean };
+pub const DataType = enum { pointer, number, boolean, char };
 pub const VarType = union(enum) { primitive: DataType, array: struct { len: usize, type: DataType } };
 
 pub const DeclarationType = enum { var_dec, global_dec };
@@ -164,12 +164,20 @@ pub fn getStackSize(self: *@This()) usize {
             .global_dec => 0,
         };
     }
-    return size;
+    const mod = @mod(size, 8);
+    return if (mod > 0) size + (8 - mod) else size;
 }
 
 pub fn getVariableSize(varType: VarType) usize {
     return switch (varType) {
-        .primitive => 8,
+        .primitive => |primitive| {
+            return switch (primitive) {
+                .pointer => 8,
+                .number => 8,
+                .char => 1,
+                .boolean => 1,
+            };
+        },
         .array => |array| 8 * array.len,
     };
 }

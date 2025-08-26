@@ -1,0 +1,6 @@
+Program Main 
+var ch : char
+begin
+   ch := 255 
+   printf('%c', ch)
+end

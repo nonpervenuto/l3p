@@ -1,9 +1,8 @@
 Program Main 
 var x, y : numeric
-var arr : array[10] of numeric
 begin
-    x := 6
-    y := 2
-    printf('%d\n', x * y)
+    x := ( 6 * 6 - 1 ) / 35 + 1
+    y := 4 / 3 + 2 / 55 % 12 + 2 - 200
+    printf('%d %d\n', x, y)
 end
 
