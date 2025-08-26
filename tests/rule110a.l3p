@@ -1,0 +1,79 @@
+Program Rule110A
+var WIDTH, STEPS : numeric
+
+var i, t, left, center, right, idx : numeric
+var lut : array[8] of numeric
+var current, next : array[80] of numeric
+
+begin
+  
+  {If you change this rememver to change the size of the array}
+  WIDTH := 80
+  STEPS := 40
+
+  lut[0] := 0
+  lut[1] := 1
+  lut[2] := 1
+  lut[3] := 1
+  lut[4] := 0
+  lut[5] := 1
+  lut[6] := 1
+  lut[7] := 0
+
+  i := 0
+  while i < WIDTH do
+    current[i] := 0
+    i := i + 1
+  endwhile
+  current[WIDTH / 2] := 1
+
+  t := 0
+  while t < STEPS do
+   
+    i := 0
+    while i < WIDTH do
+      if current[i] = 1 then 
+        printf('#')
+      else
+        printf(' ')
+      endif 
+      i := i + 1
+    endwhile
+
+    printf('\n')
+
+    i := 0
+    while i < WIDTH do
+
+      if i = 0 then
+        left := 0
+      else 
+        left := current[i - 1]
+      endif
+
+      center := current[i]
+
+      if i = WIDTH - 1 then
+        right := 0
+      else
+        right := current[i + 1]
+      endif
+
+      idx := (left << 2) | (center << 1) | right
+
+      next[i] := lut[idx]
+
+      i := i + 1
+    endwhile
+
+    i := 0
+    while i < WIDTH do
+      current[i] := next[i]
+      i := i + 1
+    endwhile
+
+    t := t + 1
+  endwhile
+
+end
+
