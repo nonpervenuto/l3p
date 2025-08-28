@@ -56,3 +56,18 @@ WhileStatement:
   ENDWHILE
 
 ```
+
+## Build and run Wasm target
+
+A simple wasm-ready demo is available at `src-wasm`.
+First run the compiler with `wasm` target
+
+```
+zig build run -- tests/hello_world.l3p --target=wasm
+```
+Run any http server _on the root folder_
+```
+python3 -m http.server
+```
+Open the browser at: [http://localhost:<port>/src-wasm/wasm.html]
+
