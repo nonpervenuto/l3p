@@ -64,18 +64,13 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
         var off: usize = 0;
         var map = std.AutoHashMap(usize, struct { usize, usize }).init(self.allocator);
         // data section
-        for (ir.variables.items) |variable| {
-            switch (variable) {
-                .var_dec => {},
-                .global_dec => |global| {
-                    if (global.data != null) {
-                        try w.print("   (data (i32.const {d}) \"", .{off});
-                        try std.zig.stringEscape(global.data.?, w);
-                        try w.print("\")\n", .{});
-                        try map.put(global.address, .{ off, global.data.?.len });
-                        off = off + global.data.?.len;
-                    }
-                },
+        for (ir.globals.items) |global| {
+            if (global.data != null) {
+                try w.print("   (data (i32.const {d}) \"", .{off});
+                try std.zig.stringEscape(global.data.?, w);
+                try w.print("\")\n", .{});
+                try map.put(global.address, .{ off, global.data.?.len });
+                off = off + global.data.?.len;
             }
         }
 
@@ -93,7 +88,7 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
         // EAX, EBX, ECX, EDX, ESI, EDI, EBP, ESP, sono 32bit
 
         // assign value
-        for (ir.operations.items) |operation| {
+        for (ir.body.operations.items) |operation| {
             switch (operation) {
                 .label => |label| {
                     _ = label;
@@ -164,6 +159,17 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
                         }
                     }
                     try w.print("    call $std_{s}\n", .{fnName});
+                },
+                .ret => |ret| {
+                    _ = ret;
+                    // The result of the call is placed in RAX
+                    // try loadReg(w, "  RAX", ret.arg);
+                    // try write(w,
+                    //     \\  add rsp, {d}
+                    //     \\  pop rbp
+                    //     \\  ret
+                    //     \\
+                    // , .{stackSize});
                 },
                 .unary_neg => |prefix| {
                     _ = prefix;

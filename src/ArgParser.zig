@@ -14,7 +14,11 @@ pub const Options = struct {
 };
 
 pub fn parse(args: *ArgIterator) Options {
-    var opts: Options = undefined;
+    var opts: Options = .{
+        .path = null,
+        .target = .@"linux-x64",
+        .run = false,
+    };
     // skip program name
     _ = args.skip();
     while (args.next()) |a| {
@@ -38,6 +42,9 @@ pub fn parse(args: *ArgIterator) Options {
                 if (std.mem.eql(u8, fi.name, arg_name)) {
                     if (getArgValue(fi.type, arg_value)) |fv| {
                         @field(opts, fi.name) = fv;
+                    } else {
+                        std.log.debug("Cannot find value {s} for {s}\n", .{ arg_value.?, arg_name });
+                        printHelp();
                     }
                 }
             }
@@ -55,13 +62,23 @@ pub fn parse(args: *ArgIterator) Options {
 }
 
 fn printHelp() void {
-    std.debug.print(
+    var stdout_writer = std.fs.File.stdout().writer(&.{});
+    const stdout = &stdout_writer.interface;
+    stdout.print(
+        \\
         \\ Usage: l3p <path> [options]
         \\
         \\ Options:
-        \\     --target=<target>            Compilation target: linux-x84, wasm
-        \\     --run                        Run after compilation
-    , .{});
+        \\     --target=<target>            Compilation target: linux-x64, wasm. Default: linux-x64
+        \\     --run                        Run after compilation. Default: false
+        \\
+        \\
+    , .{}) catch |err| {
+        std.debug.print("printHelp() error: {any}\n", .{err});
+    };
+    stdout.flush() catch |err| {
+        std.debug.print("printHelp() flush error: {any}\n", .{err});
+    };
 }
 
 fn getArgValue(comptime T: type, val: ?[]const u8) ?T {

@@ -52,6 +52,7 @@ pub fn build(b: *std.Build) !void {
         build_test_exe.addArgs(&.{
             "--",
             b.fmt("tests/{s}", .{entry.name}),
+            "--target=linux-x64",
         });
         build_test_exe.setName(b.fmt("Compile test: {s}", .{entry.name}));
 

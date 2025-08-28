@@ -1,6 +1,4 @@
 Program Main 
 begin
-    printf('Hello World 1!\n')
-    printf('Aseo!\n')
-    printf('Bazinga\n')
+    printf('Hello World!\n')
 end
