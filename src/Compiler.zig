@@ -37,6 +37,16 @@ pub fn compileProgram(self: *Self, path: []const u8, buffer: []const u8) !Ir {
     var lexer = Lexer.init(path, buffer);
     try fetchExpectMany(&lexer, .{ .Program, .Identifier, .EndOfLine });
     try self.compileVars(&lexer);
+
+    // Check if the next token is Function or Procedure
+    while (try peekAny(&lexer, .{ .Function, .Procedure })) {
+        if (try accept(&lexer, lexer.peek(), .Function)) {
+            try self.compileFunction(&lexer);
+        } else if (try accept(&lexer, lexer.peek(), .Procedure)) {
+            try self.compileProcedure(&lexer);
+        }
+    }
+
     try fetchExpectMany(&lexer, .{ .Begin, .EndOfLine });
     try self.parseBody(&lexer, .{.End});
     try fetchExpectMany(&lexer, .{ .End, .EndOfLine });
@@ -88,6 +98,42 @@ fn compileVars(self: *Self, lexer: *Lexer) !void {
             return CompileError.UnexpectedToken;
         }
     }
+}
+
+fn compileFunction(self: *Self, lexer: *Lexer) !void {
+    _ = self;
+    try fetchExpectMany(lexer, .{.Function});
+    const functionName = try getExpect(lexer, .Identifier);
+    std.debug.print("Function: {f}\n", .{functionName});
+    try fetchExpectMany(lexer, .{.OpenParent});
+    // TODO: Parse function arguments
+    try fetchExpectMany(lexer, .{ .CloseParent, .Colon });
+    // TODO: Parse function return type
+    const function_return_type = lexer.next().?;
+    std.debug.print("Return Type: {f}\n", .{function_return_type});
+    try fetchExpectMany(lexer, .{.EndOfLine});
+
+    try fetchExpectMany(lexer, .{ .Begin, .EndOfLine });
+
+    //TODO: Parse function body
+    try fetchExpectMany(lexer, .{ .Return, .IntegerLiteral, .EndOfLine });
+
+    try fetchExpectMany(lexer, .{ .End, .EndOfLine });
+}
+
+fn compileProcedure(self: *Self, lexer: *Lexer) !void {
+    _ = self;
+    try fetchExpectMany(lexer, .{.Procedure});
+    const procedureName = try getExpect(lexer, .Identifier);
+    std.debug.print("Procedure: {f}\n", .{procedureName});
+    try fetchExpectMany(lexer, .{.OpenParent});
+
+    // TODO: Parse procedure arguments
+    try fetchExpectMany(lexer, .{ .Identifier, .Colon, .Numeric, .CloseParent, .EndOfLine });
+
+    try fetchExpectMany(lexer, .{ .Begin, .EndOfLine });
+    //TODO: Parse function body
+    try fetchExpectMany(lexer, .{ .End, .EndOfLine });
 }
 
 fn isOperator(k: TokenKind) bool {
@@ -418,6 +464,16 @@ pub fn expect(lexer: *Lexer, token: ?Token, kind: TokenKind) CompileError!void {
     }
 }
 
+pub fn accept(lexer: *Lexer, token: ?Token, kind: TokenKind) CompileError!bool {
+    const t = token orelse {
+        diagnostic(lexer, null, "Expected {s}, got instead 'end of file' \n", .{
+            @tagName(kind),
+        }) catch return error.PrintDiagnosticError;
+        return error.UnexpectedToken;
+    };
+    return t.kind == kind;
+}
+
 // Consume the next token and check for the expected kind, and return the token
 pub fn getExpect(lexer: *Lexer, comptime kind: TokenKind) !Token {
     const token = lexer.next();
@@ -431,6 +487,18 @@ pub fn fetchExpectMany(lexer: *Lexer, comptime kinds: anytype) !void {
     inline for (fields) |field| {
         try expect(lexer, lexer.next(), @field(kinds, field.name));
     }
+}
+
+/// Peek the next token and check for the expected kind in the list
+pub fn peekAny(lexer: *Lexer, comptime kinds: anytype) !bool {
+    const fields = std.meta.fields(@TypeOf(kinds));
+    const peek = lexer.peek();
+    inline for (fields) |field| {
+        if (try accept(lexer, peek, @field(kinds, field.name))) {
+            return true;
+        }
+    }
+    return false;
 }
 
 pub fn diagnostic(lexer: *Lexer, token: ?Token, comptime fmt: []const u8, args: anytype) !void {

@@ -8,6 +8,7 @@ pub const keywords = [_][]const u8{
     "PROGRAM",
     "FUNCTION",
     "PROCEDURE",
+    "RETURN",
     "VAR",
     "NUMERIC",
     "CHAR",
@@ -33,6 +34,7 @@ pub const keywords_map = [_]TokenKind{
     .Program,
     .Function,
     .Procedure,
+    .Return,
     .Var,
     .Numeric,
     .Char,
@@ -60,6 +62,7 @@ pub const TokenKind = enum {
     Program,
     Function,
     Procedure,
+    Return,
     Var,
     Numeric,
     Char,
@@ -233,7 +236,7 @@ pub fn next(self: *@This()) ?Token {
     return token;
 }
 
-pub fn get(self: *@This()) ?Token {
+fn get(self: *@This()) ?Token {
     const eof = self.buffer.len;
     var kind = TokenKind.Unknown;
     while (self.token_start < eof) {

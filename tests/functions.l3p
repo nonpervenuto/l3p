@@ -1,0 +1,22 @@
+Program Main 
+var h: numeric
+
+  { Functions − these subprograms return a single value. }
+  Function get() : integer
+  begin
+    return 1
+  end
+
+  { Procedures − these subprograms do not return a value directly. }
+  Procedure print (n: numeric)
+  begin
+
+  end
+
+begin
+  
+  { h := get() }
+  { print(h) }
+
+end
+

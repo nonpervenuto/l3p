@@ -37,3 +37,22 @@ zig build run -- ./tests/hello_world.l3p
 ```
 zig build test-snapshot -p "tests/snapshots" --summary all
 ```
+
+```
+IfStatement:
+
+  IF <expression> THEN
+    <statements>
+  ELSEIF <expression> THEN
+    <statements>
+  ELSE
+    <statements
+  ENDIF
+
+WhileStatement:
+
+  WHILE <expression> DO
+    <statements>
+  ENDWHILE
+
+```
