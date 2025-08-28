@@ -368,7 +368,14 @@ pub fn compileExpressionRecursive(self: *Self, lexer: *Lexer, body: *Ir.Body, ar
 
 pub fn parseBody(self: *Self, lexer: *Lexer, body: *Ir.Body, close_body_tags: anytype) CompileError!void {
     while (lexer.peek()) |peek| {
-        if (peek.kind == TokenKind.If) {
+        if (peek.kind == TokenKind.Return) {
+            try fetchExpectMany(lexer, .{.Return});
+            const arg = try self.compileExpression(lexer, body);
+            try body.operations.append(self.allocator, .{
+                .ret = .{ .arg = arg },
+            });
+            try fetchExpectMany(lexer, .{.EndOfLine});
+        } else if (peek.kind == TokenKind.If) {
             try fetchExpectMany(lexer, .{.If});
 
             // if boolean expression

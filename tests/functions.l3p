@@ -1,13 +1,26 @@
 Program Main 
 
-Function print() : numeric
+var sum : numeric
+
+Function otto() : numeric
 begin
-  printf('Hello\n')
+  return 8
 end
 
+Function sette() : numeric
 begin
-  print()
-  print() 
-  print()
+  return 7
+end
+
+{ Procedures − these subprograms do not return a value directly. }
+{ Procedure print (n: numeric)
+begin
+ printf('%d', n)
+end
+}
+
+begin
+  sum := otto() + sette()
+  printf('15 = %d\n', sum)
 end
 

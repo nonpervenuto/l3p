@@ -217,6 +217,16 @@ pub fn buildBody(w: *std.Io.Writer, name: []const u8, ir: *Ir, body: *Ir.Body) !
                     @panic("Call a funzioni esterne supporta al massimo 6 argomenti");
                 }
             },
+            .ret => |ret| {
+                // The result of the call is placed in RAX
+                try loadReg(w, "  RAX", ret.arg);
+                try write(w,
+                    \\  add rsp, {d}
+                    \\  pop rbp
+                    \\  ret
+                    \\ 
+                , .{stackSize});
+            },
             .unary_neg => |prefix| {
                 try loadReg(w, "  rax", prefix.arg);
                 try w.print("  neg rax\n", .{});
