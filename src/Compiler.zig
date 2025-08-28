@@ -121,10 +121,10 @@ fn compileFunction(self: *Self, lexer: *Lexer) !void {
             .operations = .empty,
         },
     };
-    try self.ir.functions.append(self.allocator, function);
     try self.parseBody(lexer, &function.body, .{.End});
+    try self.ir.functions.append(self.allocator, function);
 
-    try fetchExpectMany(lexer, .{.EndOfLine});
+    try fetchExpectMany(lexer, .{ .End, .EndOfLine });
 }
 
 fn compileProcedure(self: *Self, lexer: *Lexer) !void {
