@@ -6,6 +6,8 @@ const isDigit = std.ascii.isDigit;
 
 pub const keywords = [_][]const u8{
     "PROGRAM",
+    "FUNCTION",
+    "PROCEDURE",
     "VAR",
     "NUMERIC",
     "CHAR",
@@ -29,6 +31,8 @@ pub const keywords = [_][]const u8{
 
 pub const keywords_map = [_]TokenKind{
     .Program,
+    .Function,
+    .Procedure,
     .Var,
     .Numeric,
     .Char,
@@ -54,6 +58,8 @@ pub const TokenKind = enum {
     Identifier,
     // keywords
     Program,
+    Function,
+    Procedure,
     Var,
     Numeric,
     Char,
@@ -190,17 +196,18 @@ pub fn getLoc(self: *@This(), token: Token) Loc {
     const eof = self.buffer.len;
 
     var row: usize = 1;
-    var col: usize = 1;
+    var col: usize = 0;
 
     while (index < eof and index <= token.token_start) : (index += 1) {
         switch (self.buffer[index]) {
             '\n' => {
                 row += 1;
-                col = 1;
+                col = 0;
             },
-            else => {},
+            else => {
+                col += 1;
+            },
         }
-        col += 1;
     }
     return .{ .row = row, .col = col };
 }
