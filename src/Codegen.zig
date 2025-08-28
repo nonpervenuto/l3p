@@ -82,13 +82,13 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
     // data section
     try w.print("section \".data\"\n", .{});
     for (ir.globals.items) |global| {
-        if (global.data != null) {
-            try w.print("   data{d}: db ", .{global.address});
-            for (global.data.?) |char| {
+        try w.print("   data{d}: db ", .{global.address});
+        if (global.data) |data| {
+            for (data) |char| {
                 try w.print("0x{X},", .{char});
             }
-            try w.print("0x00\n", .{});
         }
+        try w.print("0x00\n", .{});
     }
 
     try w.flush();
