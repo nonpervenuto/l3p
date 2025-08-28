@@ -75,7 +75,7 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
             \\   extrn fclose
         , .{});
 
-        const stackSize = ir.getStackSize();
+        const stackSize = ir.getStackSize(&ir.body);
 
         // allocate stack
         try write(w,
@@ -87,7 +87,7 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
         // EAX, EBX, ECX, EDX, ESI, EDI, EBP, ESP, sono 32bit
 
         // assign value
-        for (ir.operations.items) |operation| {
+        for (ir.body.operations.items) |operation| {
             switch (operation) {
                 .label => |label| {
                     try w.print("{s}: \n", .{label});
@@ -358,18 +358,13 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
 
         // data section
         try w.print("section \".data\"\n", .{});
-        for (ir.variables.items) |variable| {
-            switch (variable) {
-                .var_dec => {},
-                .global_dec => |global| {
-                    if (global.data != null) {
-                        try w.print("   data{d}: db ", .{global.address});
-                        for (global.data.?) |char| {
-                            try w.print("0x{X},", .{char});
-                        }
-                        try w.print("0x00\n", .{});
-                    }
-                },
+        for (ir.globals.items) |global| {
+            if (global.data != null) {
+                try w.print("   data{d}: db ", .{global.address});
+                for (global.data.?) |char| {
+                    try w.print("0x{X},", .{char});
+                }
+                try w.print("0x00\n", .{});
             }
         }
     }

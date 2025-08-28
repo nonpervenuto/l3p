@@ -6,20 +6,20 @@ pub const Arg = union(ArgType) { variable: usize, integerLiteral: u32, dataLiter
 pub const DataType = enum { pointer, number, boolean, char };
 pub const VarType = union(enum) { primitive: DataType, array: struct { len: usize, type: DataType } };
 
-pub const DeclarationType = enum { var_dec, global_dec };
-pub const Declaration = union(DeclarationType) {
-    var_dec: struct {
-        name: []const u8,
-        offset: usize,
-        type: VarType,
-    },
-    global_dec: struct {
-        name: []const u8,
-        data: ?[]const u8,
-        address: usize,
-    },
+pub const GlobalVar = struct {
+    name: []const u8,
+    data: ?[]const u8,
+    address: usize,
 };
-pub const VariableList = std.ArrayList(Declaration);
+
+pub const ScopedVar = struct {
+    name: []const u8,
+    offset: usize,
+    type: VarType,
+};
+
+pub const GlobalVarList = std.ArrayList(GlobalVar);
+pub const ScopedVarList = std.ArrayList(ScopedVar);
 
 // expressions
 pub const OpType = enum {
@@ -86,10 +86,22 @@ pub const Op = union(OpType) {
 };
 
 pub const OperationList = std.ArrayList(Op);
+pub const FunctionList = std.ArrayList(Function);
+
+pub const Body = struct {
+    variables: ScopedVarList,
+    operations: OperationList,
+};
+
+pub const Function = struct {
+    name: []const u8,
+    body: Body,
+};
 
 // Ir
-variables: VariableList,
-operations: OperationList,
+globals: GlobalVarList,
+body: Body,
+functions: FunctionList,
 jump_labels: usize = 0,
 
 pub fn createLabel(self: *@This(), allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
@@ -98,71 +110,52 @@ pub fn createLabel(self: *@This(), allocator: std.mem.Allocator, name: []const u
     return label;
 }
 
-pub fn createVar(self: *@This(), allocator: std.mem.Allocator, name: []const u8, dataType: VarType) !usize {
-    const address = self.calcVarOffset(dataType);
-    try self.variables.append(
+pub fn createVar(self: *@This(), allocator: std.mem.Allocator, body: *Body, name: []const u8, dataType: VarType) !usize {
+    const address = self.calcVarOffset(body, dataType);
+    try body.variables.append(
         allocator,
-        Declaration{
-            .var_dec = .{ .name = name, .offset = address, .type = dataType },
-        },
+        .{ .name = name, .offset = address, .type = dataType },
     );
     return address;
 }
 
-pub fn createTempVar(self: *@This(), allocator: std.mem.Allocator, dataType: VarType) !usize {
-    const address = self.calcVarOffset(dataType);
-    try self.variables.append(
+pub fn createTempVar(self: *@This(), allocator: std.mem.Allocator, body: *Body, dataType: VarType) !usize {
+    const address = self.calcVarOffset(body, dataType);
+    try body.variables.append(
         allocator,
-        Declaration{
-            .var_dec = .{ .name = "", .offset = address, .type = dataType },
-        },
+        .{ .name = "", .offset = address, .type = dataType },
     );
     return address;
 }
 
-pub fn findVariable(self: *@This(), name: []const u8) ?Declaration {
-    for (self.variables.items) |variable| {
-        switch (variable) {
-            .var_dec => |var_dec| {
-                if (std.ascii.eqlIgnoreCase(var_dec.name, name)) {
-                    return variable;
-                }
-            },
-            .global_dec => {},
+pub fn findVariable(self: *@This(), body: *Body, name: []const u8) ?ScopedVar {
+    _ = self;
+    for (body.variables.items) |variable| {
+        if (std.ascii.eqlIgnoreCase(variable.name, name)) {
+            return variable;
         }
     }
     return null;
 }
 
-pub fn calcVarOffset(self: *@This(), varType: VarType) usize {
+pub fn calcVarOffset(self: *@This(), body: *Body, varType: VarType) usize {
+    _ = self;
     var sum: usize = getVariableSize(varType);
-    for (self.variables.items) |variable| {
-        sum += switch (variable) {
-            .var_dec => |value| getVariableSize(value.type),
-            .global_dec => 0,
-        };
+    for (body.variables.items) |variable| {
+        sum += getVariableSize(variable.type);
     }
     return sum;
 }
 
 pub fn calcGlobalOffset(self: *@This()) usize {
-    var sum: usize = 0;
-    for (self.variables.items) |variable| {
-        sum += switch (variable) {
-            .var_dec => 0,
-            .global_dec => 1,
-        };
-    }
-    return sum;
+    return self.globals.items.len;
 }
 
-pub fn getStackSize(self: *@This()) usize {
+pub fn getStackSize(self: *@This(), body: *Body) usize {
+    _ = self;
     var size: usize = 0;
-    for (self.variables.items) |variable| {
-        size += switch (variable) {
-            .var_dec => |value| getVariableSize(value.type),
-            .global_dec => 0,
-        };
+    for (body.variables.items) |variable| {
+        size += getVariableSize(variable.type);
     }
     const mod = @mod(size, 8);
     return if (mod > 0) size + (8 - mod) else size;
