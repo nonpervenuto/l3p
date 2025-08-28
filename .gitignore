@@ -3,3 +3,4 @@ zig-out/
 .idea/
 
 l3p-out/
+l3p-out-wasm/
