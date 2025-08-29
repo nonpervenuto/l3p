@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const System = @import("System.zig");
 const Ir = @import("Ir.zig");
 const Lexer = @import("Lexer.zig");
 const Token = Lexer.Token;
@@ -515,14 +516,11 @@ pub fn peekAny(lexer: *Lexer, comptime kinds: anytype) !bool {
 }
 
 pub fn diagnostic(lexer: *Lexer, token: ?Token, comptime fmt: []const u8, args: anytype) !void {
-    var writer = std.fs.File.stderr().writer(&.{});
-    const std_err = &writer.interface;
     const t = token orelse {
-        std_err.print("Unexpected 'end of file'\nMake sure to balance every 'BEGIN' with and 'END'\n", .{}) catch return error.PrintDiagnosticError;
+        System.Err.print("Unexpected 'end of file'\nMake sure to balance every 'BEGIN' with and 'END'\n", .{});
         return error.UnexpectedToken;
     };
     const loc = lexer.getLoc(t);
-    std_err.print("{s}:{d}:{d} : " ++ "\x1b[31m" ++ "L3P Compilation Error " ++ "\x1b[0m", .{ t.file_name, loc.row, loc.col }) catch return error.PrintDiagnosticError;
-    std_err.print(fmt, args) catch return error.PrintDiagnosticError;
-    std_err.flush() catch return error.PrintDiagnosticError;
+    System.Err.print("{s}:{d}:{d} : " ++ "\x1b[31m" ++ "L3P Compilation Error " ++ "\x1b[0m", .{ t.file_name, loc.row, loc.col });
+    System.Err.print(fmt, args);
 }

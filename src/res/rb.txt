@@ -1,0 +1,21 @@
+
+██╗     ██████╗ ██████╗ 
+██║     ╚════██╗██╔══██╗
+██║      █████╔╝██████╔╝
+██║      ╚═══██╗██╔═══╝ 
+███████╗██████╔╝██║     
+╚══════╝╚═════╝ ╚═╝      
+
+Usage: l3p <path> [options]
+
+Examples:
+
+  l3p ./tests/hello_world.l3p 
+  l3p ./tests/hello_world.l3p --target=wasm 
+  l3p ./tests/hello_world.l3p --target=linux-x64 --run
+
+Options:
+
+  --target=<target>   Compilation target: linux-x64, wasm. Default: linux-x64
+  --run               Run after compilation. Default: false
+

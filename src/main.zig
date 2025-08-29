@@ -4,31 +4,38 @@ const Compiler = @import("Compiler.zig");
 const CodegenWasm = @import("CodegenWasm.zig");
 const ArgParser = @import("ArgParser.zig");
 const Codegen = @import("Codegen.zig").Codegen;
+const System = @import("System.zig");
 
 pub fn main() !void {
-    const allocator: std.mem.Allocator = std.heap.page_allocator;
+    const gpa: std.mem.Allocator = std.heap.page_allocator;
 
-    var argIterator: std.process.ArgIterator = try std.process.argsWithAllocator(allocator);
-    defer argIterator.deinit();
+    // TODO: Error handling argument parsing
+    const options = ArgParser.parse(gpa) catch {
+        return;
+    };
 
-    const options = ArgParser.parse(&argIterator);
-    std.log.debug("{any}", .{options});
+    try compileSource(gpa, options);
+}
 
+fn compileSource(gpa: std.mem.Allocator, options: ArgParser.Options) !void {
     if (options.path) |path| {
         const file = std.fs.cwd().openFile(path, .{}) catch |err| {
-            std.log.err("Failed to open file: {s}", .{@errorName(err)});
+            System.Err.printRed("Failed to open file: \"{s}\" {s} \n", .{ path, @errorName(err) });
             return;
         };
         defer file.close();
-        const buffer = try file.deprecatedReader().readAllAlloc(allocator, 1024 * 1024);
-        defer allocator.free(buffer);
+        const buffer = try file.deprecatedReader().readAllAlloc(gpa, 1024 * 1024);
+        defer gpa.free(buffer);
 
-        var compiler = Compiler.init(allocator);
-        var ir = compiler.compile(path, buffer) catch |err| switch (err) {
-            else => return err,
+        var compiler = Compiler.init(gpa);
+        var ir = compiler.compile(path, buffer) catch {
+            return;
         };
 
-        var builder = Codegen.from(allocator, @tagName(options.target)).?;
+        var builder = Codegen.from(gpa, options) orelse {
+            System.Err.printRed("Invalid target: {s}\n", .{@tagName(options.target)});
+            return;
+        };
 
         _ = try builder.build(path, &ir);
     }

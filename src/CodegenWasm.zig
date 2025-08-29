@@ -2,7 +2,6 @@ const std = @import("std");
 const Ir = @import("Ir.zig");
 
 allocator: std.mem.Allocator,
-std_err_writer: std.fs.File.Writer,
 
 pub const CodegenError = error{
     FasmError,
@@ -11,10 +10,8 @@ pub const CodegenError = error{
 };
 
 pub fn init(allocator: std.mem.Allocator) @This() {
-    const buf = allocator.alloc(u8, 4096) catch unreachable;
     return @This(){
         .allocator = allocator,
-        .std_err_writer = std.fs.File.stderr().writer(buf),
     };
 }
 

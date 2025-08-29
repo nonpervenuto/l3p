@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const Options = @import("ArgParser.zig").Options;
 const CodegenLinux = @import("CodegenLinux.zig");
 const CodegenWasm = @import("CodegenWasm.zig");
 const Ir = @import("Ir.zig");
@@ -20,17 +21,16 @@ pub const Codegen = union(enum) {
         }
     }
 
-    pub fn from(allocator: std.mem.Allocator, target: []const u8) ?Codegen {
+    pub fn from(allocator: std.mem.Allocator, options: Options) ?Codegen {
         const ti = @typeInfo(@This());
-        var res: ?Codegen = null;
         inline for (ti.@"union".fields) |fe| {
-            if (res == null and std.mem.eql(u8, fe.name, target)) {
+            if (std.mem.eql(u8, fe.name, @tagName(options.target))) {
                 if (@hasDecl(fe.type, "init")) {
                     const initFn = @field(fe.type, "init");
-                    res = @unionInit(Codegen, fe.name, initFn(allocator));
+                    return @unionInit(Codegen, fe.name, initFn(allocator));
                 }
             }
         }
-        return res;
+        return null;
     }
 };

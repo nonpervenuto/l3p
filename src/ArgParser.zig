@@ -1,6 +1,7 @@
 const std = @import("std");
-
 const ArgIterator = std.process.ArgIterator;
+const System = @import("System.zig");
+const help = @embedFile("./res/rb.txt");
 
 pub const Target = enum {
     @"linux-x64",
@@ -13,7 +14,17 @@ pub const Options = struct {
     run: bool,
 };
 
-pub fn parse(args: *ArgIterator) Options {
+pub fn parse(gpa: std.mem.Allocator) !Options {
+    var argIterator = try std.process.argsWithAllocator(gpa);
+    defer argIterator.deinit();
+    const options = parseArguments(&argIterator) catch |e| {
+        System.Out.print("{s}", .{help});
+        return e;
+    };
+    return options;
+}
+
+pub fn parseArguments(args: *ArgIterator) !Options {
     var opts: Options = .{
         .path = null,
         .target = .@"linux-x64",
@@ -43,8 +54,8 @@ pub fn parse(args: *ArgIterator) Options {
                     if (getArgValue(fi.type, arg_value)) |fv| {
                         @field(opts, fi.name) = fv;
                     } else {
-                        std.log.debug("Cannot find value {s} for {s}\n", .{ arg_value.?, arg_name });
-                        printHelp();
+                        System.Err.print("Cannot find value {s} for {s}\n", .{ arg_value orelse "<empty>", arg_name });
+                        return error.InvalidArgument;
                     }
                 }
             }
@@ -55,45 +66,26 @@ pub fn parse(args: *ArgIterator) Options {
     }
 
     if (opts.path == null) {
-        printHelp();
+        System.Err.print("Please specify a file\n", .{});
+        return error.InvalidArgument;
     }
-
     return opts;
-}
-
-fn printHelp() void {
-    var stdout_writer = std.fs.File.stdout().writer(&.{});
-    const stdout = &stdout_writer.interface;
-    stdout.print(
-        \\
-        \\ Usage: l3p <path> [options]
-        \\
-        \\ Options:
-        \\     --target=<target>            Compilation target: linux-x64, wasm. Default: linux-x64
-        \\     --run                        Run after compilation. Default: false
-        \\
-        \\
-    , .{}) catch |err| {
-        std.debug.print("printHelp() error: {any}\n", .{err});
-    };
-    stdout.flush() catch |err| {
-        std.debug.print("printHelp() flush error: {any}\n", .{err});
-    };
 }
 
 fn getArgValue(comptime T: type, val: ?[]const u8) ?T {
     std.log.debug("Get arg value: {any}@{any}", .{ T, val });
+    const v = val orelse "";
     const ti = @typeInfo(T);
     switch (ti) {
         .@"enum" => {
             inline for (ti.@"enum".fields) |fe| {
-                if (std.mem.eql(u8, fe.name, val.?)) {
+                if (std.mem.eql(u8, fe.name, v)) {
                     return @field(T, fe.name);
                 }
             }
             return null;
         },
-        .array => return val.?,
+        .array => return v,
         .bool => return true,
         else => return null,
     }
