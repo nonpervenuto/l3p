@@ -37,6 +37,12 @@ pub fn compile(self: *Self, path: []const u8, buffer: []const u8) !Ir {
 /// Compile the root program
 pub fn compileProgram(self: *Self, path: []const u8, buffer: []const u8) !Ir {
     var lexer = Lexer.init(path, buffer);
+
+    // skip new lines at the start of the file
+    while (try accept(&lexer, lexer.peek(), .EndOfLine)) {
+        _ = lexer.next();
+    }
+
     try fetchExpectMany(&lexer, .{ .Program, .Identifier, .EndOfLine });
     try self.compileVars(&lexer, &self.ir.body);
 
