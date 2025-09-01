@@ -37,6 +37,20 @@ fn compileSource(gpa: std.mem.Allocator, options: ArgParser.Options) !void {
             return;
         };
 
-        _ = try builder.build(path, &ir);
+        const executable = try builder.build(path, &ir);
+        if (options.run) {
+            _ = try runExecutable(gpa, &[_][]const u8{executable});
+        }
     }
+}
+
+fn runExecutable(gpa: std.mem.Allocator, argv: []const []const u8) !bool {
+    var cmd = std.process.Child.init(argv, gpa);
+    try cmd.spawn();
+    const term = try cmd.wait();
+    // Check status code
+    return switch (term) {
+        .Exited => |code| code == 0,
+        else => false,
+    };
 }

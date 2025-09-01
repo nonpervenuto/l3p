@@ -128,7 +128,7 @@ pub fn build(self: @This(), path: []const u8, ir: *Ir) ![]const u8 {
             else => false,
         }) return error.GccError;
 
-        return exe_name;
+        return exe_path;
     }
 }
 
@@ -361,6 +361,10 @@ pub fn buildBody(w: *std.Io.Writer, name: []const u8, ir: *Ir, body: *Ir.Body) !
                 switch (infix_plus.rhs) {
                     .variable => |rhs_offset| try w.print("  add rax, [rbp - {d}] \n", .{rhs_offset}),
                     .integerLiteral => |rhs_value| try w.print("  add rax, 0x{X} \n", .{rhs_value}),
+                    .deref => |offset| {
+                        try w.print("  MOV RBX,  [rbp - {d}] \n", .{offset});
+                        try w.print("  ADD RAX, [RBX]  \n", .{});
+                    },
                     else => @panic("Not implemented"),
                 }
                 try w.print("  mov [rbp - {d}], rax\n", .{target_offset});
@@ -371,6 +375,10 @@ pub fn buildBody(w: *std.Io.Writer, name: []const u8, ir: *Ir, body: *Ir.Body) !
                 switch (infix.rhs) {
                     .variable => |rhs_offset| try w.print("  sub rax, QWORD [rbp - {d}] \n", .{rhs_offset}),
                     .integerLiteral => |rhs_value| try w.print("  sub QWORD rax, 0x{X} \n", .{rhs_value}),
+                    .deref => |offset| {
+                        try w.print("  MOV RBX,  [rbp - {d}] \n", .{offset});
+                        try w.print("  SUB RAX, [RBX]  \n", .{});
+                    },
                     else => @panic("Not implemented"),
                 }
                 try w.print("  mov QWORD [rbp - {d}], rax\n", .{target_offset});
