@@ -142,10 +142,9 @@ pub const Loc = struct {
 };
 
 pub const Token = struct {
-    file_name: []const u8,
     token: []const u8,
     kind: TokenKind,
-    token_start: usize,
+    start: usize,
 
     pub fn format(self: Token, w: *std.Io.Writer) !void {
         if (self.kind == TokenKind.EndOfLine) {
@@ -201,7 +200,7 @@ pub fn getLoc(self: *@This(), token: Token) Loc {
     var row: usize = 1;
     var col: usize = 0;
 
-    while (index < eof and index <= token.token_start) : (index += 1) {
+    while (index < eof and index <= token.start) : (index += 1) {
         switch (self.buffer[index]) {
             '\n' => {
                 row += 1;
@@ -430,10 +429,9 @@ fn get(self: *@This()) ?Token {
         // std.debug.print("token: ({s})\n", .{@tagName(kind)});
         // std.debug.print("token: ({s})\n", .{name});
         const plex: Token = .{
-            .file_name = self.file_name,
             .token = token,
             .kind = kind,
-            .token_start = self.token_start,
+            .start = self.token_start,
         };
         self.token_start = self.token_end;
 

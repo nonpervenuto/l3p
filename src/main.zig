@@ -46,10 +46,7 @@ fn compileSource(gpa: std.mem.Allocator, options: ArgParser.Options) !void {
 
 fn runExecutable(gpa: std.mem.Allocator, argv: []const []const u8) !bool {
     var cmd = std.process.Child.init(argv, gpa);
-    try cmd.spawn();
-    const term = try cmd.wait();
-    // Check status code
-    return switch (term) {
+    return switch (try cmd.spawnAndWait()) {
         .Exited => |code| code == 0,
         else => false,
     };

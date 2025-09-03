@@ -527,6 +527,6 @@ pub fn diagnostic(lexer: *Lexer, token: ?Token, comptime fmt: []const u8, args: 
         return error.UnexpectedToken;
     };
     const loc = lexer.getLoc(t);
-    System.Err.print("{s}:{d}:{d} : " ++ "\x1b[31m" ++ "L3P Compilation Error " ++ "\x1b[0m", .{ t.file_name, loc.row, loc.col });
+    System.Err.print("{s}:{d}:{d} : " ++ "\x1b[31m" ++ "L3P Compilation Error " ++ "\x1b[0m", .{ lexer.file_name, loc.row, loc.col });
     System.Err.print(fmt, args);
 }
