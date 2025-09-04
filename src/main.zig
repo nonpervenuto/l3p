@@ -38,7 +38,7 @@ fn compileSource(gpa: std.mem.Allocator, options: ArgParser.Options) !void {
         };
 
         const executable = try builder.build(path, &ir);
-        if (options.run) {
+        if (options.target == .@"linux-x64" and options.run) {
             _ = try runExecutable(gpa, &[_][]const u8{executable});
         }
     }
