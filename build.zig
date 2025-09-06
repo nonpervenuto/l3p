@@ -35,8 +35,12 @@ pub fn build(b: *std.Build) !void {
     test_step.dependOn(&run_exe_tests.step);
 
     // --- snapshot tests
-
     const snap_test_step = b.step("test-snapshot", "Run snapshot tests");
+    try testSnapshot(b, snap_test_step, exe);
+}
+
+fn testSnapshot(b: *std.Build, main_step: *std.Build.Step, exe: *std.Build.Step.Compile) !void {
+    const test_output_dir = "tests/snapshots/";
 
     var tests_dir = try std.fs.cwd().openDir("tests", .{ .iterate = true });
     defer tests_dir.close();
@@ -61,10 +65,11 @@ pub fn build(b: *std.Build) !void {
         run_test_exe.setName(b.fmt("Running test: {s}", .{file_name}));
         run_test_exe.step.dependOn(&build_test_exe.step);
         run_test_exe.has_side_effects = true;
+
         const output = run_test_exe.captureStdOut();
 
         // write exe output
-        const run_test_inst = b.addInstallFileWithDir(output, .prefix, b.fmt(
+        const run_test_inst = b.addInstallFileWithDir(output, .{ .custom = "../" ++ test_output_dir }, b.fmt(
             "{s}.txt",
             .{file_name},
         ));
@@ -78,17 +83,13 @@ pub fn build(b: *std.Build) !void {
         });
         diff.setName(b.fmt("Comparing snapshot: {s}", .{file_name}));
         diff.addDirectoryArg(b.path(b.fmt(
-            "tests/snapshots/{s}.txt",
+            test_output_dir ++ "{s}.txt",
             .{file_name},
         )));
         diff.step.dependOn(&run_test_inst.step);
 
-        snap_test_step.dependOn(&diff.step);
+        main_step.dependOn(&diff.step);
     }
-
-    //const build_dir = b.build_root.handle;
-    //const tests_dir = try build_dir.openDir("tests/", .{ .iterate = true });
-
 }
 
 fn getFileName(path: []const u8) []const u8 {

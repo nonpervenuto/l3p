@@ -35,7 +35,7 @@ zig build run -- ./tests/hello_world.l3p
 ## To execute all the tests and check the output
 
 ```
-zig build test-snapshot -p "tests/snapshots" --summary all
+zig build test-snapshot --summary all
 ```
 
 ```
