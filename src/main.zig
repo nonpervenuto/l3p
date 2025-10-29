@@ -24,7 +24,11 @@ fn compileSource(gpa: std.mem.Allocator, options: ArgParser.Options) !void {
             return;
         };
         defer file.close();
-        const buffer = try file.deprecatedReader().readAllAlloc(gpa, 1024 * 1024);
+
+        var file_reader = file.reader(&.{});
+        var reader = &file_reader.interface;
+        const len = try file.getEndPos();
+        const buffer = try reader.readAlloc(gpa, len);
         defer gpa.free(buffer);
 
         var compiler = Compiler.init(gpa);

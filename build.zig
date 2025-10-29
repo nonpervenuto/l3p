@@ -4,39 +4,66 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const exe = b.addExecutable(.{
-        .name = "l3p",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
+    // Main Executable
+    {
+        const exe = b.addExecutable(.{
+            .name = "l3p",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("src/main.zig"),
+                .target = target,
+                .optimize = optimize,
+            }),
+        });
 
-    b.installArtifact(exe);
-    const run_step = b.step("run", "Run the app");
+        b.installArtifact(exe);
+        const run_step = b.step("run", "Run the app");
 
-    const run_cmd = b.addRunArtifact(exe);
-    run_step.dependOn(&run_cmd.step);
+        const run_cmd = b.addRunArtifact(exe);
+        run_step.dependOn(&run_cmd.step);
 
-    run_cmd.step.dependOn(b.getInstallStep());
+        run_cmd.step.dependOn(b.getInstallStep());
 
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
+        if (b.args) |args| {
+            run_cmd.addArgs(args);
+        }
+
+        const exe_tests = b.addTest(.{
+            .root_module = exe.root_module,
+        });
+
+        const run_exe_tests = b.addRunArtifact(exe_tests);
+
+        const test_step = b.step("test", "Run tests");
+        test_step.dependOn(&run_exe_tests.step);
+
+        // --- snapshot tests
+        const snap_test_step = b.step("test-snapshot", "Run snapshot tests");
+        try testSnapshot(b, snap_test_step, exe);
     }
 
-    const exe_tests = b.addTest(.{
-        .root_module = exe.root_module,
-    });
+    // Experimental Executable
+    {
+        const exe = b.addExecutable(.{
+            .name = "exp",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("src/exp.zig"),
+                .target = target,
+                .optimize = optimize,
+            }),
+        });
 
-    const run_exe_tests = b.addRunArtifact(exe_tests);
+        b.installArtifact(exe);
+        const run_step = b.step("exp", "Experiments");
 
-    const test_step = b.step("test", "Run tests");
-    test_step.dependOn(&run_exe_tests.step);
+        const run_cmd = b.addRunArtifact(exe);
+        run_step.dependOn(&run_cmd.step);
 
-    // --- snapshot tests
-    const snap_test_step = b.step("test-snapshot", "Run snapshot tests");
-    try testSnapshot(b, snap_test_step, exe);
+        run_cmd.step.dependOn(b.getInstallStep());
+
+        if (b.args) |args| {
+            run_cmd.addArgs(args);
+        }
+    }
 }
 
 fn testSnapshot(b: *std.Build, main_step: *std.Build.Step, exe: *std.Build.Step.Compile) !void {
@@ -66,7 +93,7 @@ fn testSnapshot(b: *std.Build, main_step: *std.Build.Step, exe: *std.Build.Step.
         run_test_exe.step.dependOn(&build_test_exe.step);
         run_test_exe.has_side_effects = true;
 
-        const output = run_test_exe.captureStdOut();
+        const output = run_test_exe.captureStdOut(.{});
 
         // write exe output
         const run_test_inst = b.addInstallFileWithDir(output, .{ .custom = "../" ++ test_output_dir }, b.fmt(

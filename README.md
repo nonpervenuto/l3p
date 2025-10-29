@@ -2,7 +2,7 @@
 
 # Requirements
 
-- zig 0.15.1 (master)
+- zig 0.16.0 (master)
 - fasm
 - gcc
 

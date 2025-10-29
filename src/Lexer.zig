@@ -4,7 +4,7 @@ const eql = std.mem.eql;
 const isHex = std.ascii.isHex;
 const isDigit = std.ascii.isDigit;
 
-pub const keywords = [_][]const u8{
+const keywords = [_][]const u8{
     "PROGRAM",
     "FUNCTION",
     "PROCEDURE",
@@ -30,7 +30,7 @@ pub const keywords = [_][]const u8{
     "OF",
 };
 
-pub const keywords_map = [_]TokenKind{
+const keywords_map = [_]TokenKind{
     .Program,
     .Function,
     .Procedure,
@@ -119,7 +119,7 @@ pub const TokenKind = enum {
     EndOfLine,
     Unknown,
 
-    pub fn getKeyword(needle: []const u8) ?TokenKind {
+    fn getKeyword(needle: []const u8) ?TokenKind {
         if (keywords.len != keywords_map.len) {
             @compileError("Keywords and keywords_map must have the same length");
         }
@@ -402,7 +402,7 @@ fn get(self: *@This()) ?Token {
             },
             '0'...'9' => {
                 self.token_end = self.token_start + 1;
-                if (isDigitBase(self.buffer[self.token_end])) {
+                if (self.token_end < eof and isDigitBase(self.buffer[self.token_end])) {
                     self.token_end += 1;
                     while (self.token_end < eof and isHex(self.buffer[self.token_end])) {
                         self.token_end += 1;
